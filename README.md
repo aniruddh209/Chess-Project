@@ -1,7 +1,11 @@
 # ♟️ ChessPlay — Real-Time Multiplayer Chess
 
-[![Live Demo](https://chess-project-0o2o.onrender.com)
+[![Live Demo](https://img.shields.io/badge/Live-Demo-green?style=for-the-badge)](https://chessplay.onrender.com)
 
+![Node.js](https://img.shields.io/badge/Node.js-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)
+![Socket.io](https://img.shields.io/badge/Socket.io-010101?style=for-the-badge&logo=socket.io&logoColor=white)
+
+A full-stack real-time chess platform with multiplayer rooms and AI opponents.
 A real-time multiplayer chess platform built with Node.js, Socket.IO, and MongoDB.
 # ♟️ ChessPlay — Real-Time Multiplayer Chess Platform
 
