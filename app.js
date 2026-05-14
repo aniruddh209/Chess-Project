@@ -8,8 +8,15 @@ const io = socket(server);
 const { Chess } = require("chess.js");
 const mongoose = require("mongoose");
 const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
+const cookieParser = require("cookie-parser");
 const User = require("./models/User");
 const Game = require("./models/Game");
+
+// JWT Secret — in production use an environment variable
+const JWT_SECRET = process.env.JWT_SECRET || "chessplay_secret_key_2026_aniruddh";
+const JWT_EXPIRY = "1d"; // Token expires after 1 day
+const COOKIE_MAX_AGE = 24 * 60 * 60 * 1000; // 1 day in ms
 
 // ============================================================
 //  MONGODB CONNECTION
@@ -37,6 +44,7 @@ const socketUsers = new Map();
 app.set("view engine", "ejs");
 app.use(express.static(path.join(__dirname, "public")));
 app.use(express.json());
+app.use(cookieParser());
 app.use(
   "/vendor",
   express.static(path.join(__dirname, "node_modules/chess.js/dist/esm")),
@@ -50,7 +58,47 @@ app.get("/", (req, res) => {
   res.render("index", { title: "Chess" });
 });
 
+// ---------- Auth Helpers ----------
+
+function escapeRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function setAuthCookie(res, username) {
+  const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: JWT_EXPIRY });
+  res.cookie("chess_token", token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    maxAge: COOKIE_MAX_AGE,
+  });
+  return token;
+}
+
 // ---------- Auth API ----------
+
+// Auto-login: check if the browser has a valid token cookie
+app.get("/api/me", async (req, res) => {
+  try {
+    const token = req.cookies.chess_token;
+    if (!token) {
+      return res.json({ loggedIn: false });
+    }
+
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const user = await User.findOne({ username: decoded.username });
+    if (!user) {
+      res.clearCookie("chess_token");
+      return res.json({ loggedIn: false });
+    }
+
+    res.json({ loggedIn: true, username: user.username });
+  } catch (err) {
+    // Token expired or invalid — clear it
+    res.clearCookie("chess_token");
+    res.json({ loggedIn: false });
+  }
+});
 
 app.post("/api/signup", async (req, res) => {
   try {
@@ -66,7 +114,7 @@ app.post("/api/signup", async (req, res) => {
       return res.status(400).json({ error: "Password must be at least 4 characters" });
     }
 
-    const existing = await User.findOne({ username: { $regex: new RegExp(`^${username}$`, "i") } });
+    const existing = await User.findOne({ username: { $regex: new RegExp(`^${escapeRegex(username)}$`, "i") } });
     if (existing) {
       return res.status(409).json({ error: "Username already taken" });
     }
@@ -74,6 +122,7 @@ app.post("/api/signup", async (req, res) => {
     const passwordHash = await bcrypt.hash(password, 10);
     const user = await User.create({ username, passwordHash });
 
+    setAuthCookie(res, user.username);
     res.json({ success: true, username: user.username });
   } catch (err) {
     console.error("Signup error:", err);
@@ -89,7 +138,7 @@ app.post("/api/login", async (req, res) => {
       return res.status(400).json({ error: "Username and password are required" });
     }
 
-    const user = await User.findOne({ username: { $regex: new RegExp(`^${username}$`, "i") } });
+    const user = await User.findOne({ username: { $regex: new RegExp(`^${escapeRegex(username)}$`, "i") } });
     if (!user) {
       return res.status(401).json({ error: "Invalid username or password" });
     }
@@ -99,11 +148,17 @@ app.post("/api/login", async (req, res) => {
       return res.status(401).json({ error: "Invalid username or password" });
     }
 
+    setAuthCookie(res, user.username);
     res.json({ success: true, username: user.username });
   } catch (err) {
     console.error("Login error:", err);
     res.status(500).json({ error: "Server error" });
   }
+});
+
+app.post("/api/logout", (req, res) => {
+  res.clearCookie("chess_token");
+  res.json({ success: true });
 });
 
 // ---------- Profile API ----------
@@ -564,7 +619,6 @@ io.on("connection", (uniquesocket) => {
       if (result) {
         room.moveHistory.push({ from: move.from, to: move.to, promotion: move.promotion });
         io.to(roomCode).emit("move", move);
-        io.to(roomCode).emit("boardState", room.chess.fen());
 
         checkGameOver(room, roomCode);
 
@@ -573,11 +627,11 @@ io.on("connection", (uniquesocket) => {
           scheduleAIMove(roomCode);
         }
       } else {
-        uniquesocket.emit("Invalid move", move);
+        uniquesocket.emit("invalidMove", move);
       }
     } catch {
       // Invalid move — silently ignore (piece snaps back)
-      uniquesocket.emit("Invalid move", move);
+      uniquesocket.emit("invalidMove", move);
     }
   });
 
@@ -622,8 +676,7 @@ io.on("connection", (uniquesocket) => {
     room.moveHistory = [];
     room.startTime = Date.now();
 
-    io.to(roomCode).emit("boardState", room.chess.fen());
-    io.to(roomCode).emit("newGame");
+    io.to(roomCode).emit("newGame", { fen: room.chess.fen() });
     io.to(roomCode).emit("chatSystem", "♟ New game started — Good luck!");
     console.log(`New game started in room ${roomCode}`);
 
@@ -695,6 +748,14 @@ io.on("connection", (uniquesocket) => {
     }
 
     socketUsers.delete(uniquesocket.id);
+  });
+
+  // ---------- Board Theme Sync ----------
+  uniquesocket.on("boardTheme", (theme) => {
+    const roomCode = socketRooms.get(uniquesocket.id);
+    if (!roomCode) return;
+    // Broadcast theme to all players in the room
+    io.to(roomCode).emit("boardTheme", { theme, from: socketUsers.get(uniquesocket.id) });
   });
 
   // ---------- Leave Room ----------

@@ -180,7 +180,7 @@ btnLogin.addEventListener("click", async () => {
   }
 
   btnLogin.disabled = false;
-  btnLogin.textContent = "Login";
+  btnLogin.textContent = "Sign In";
 });
 
 // Signup
@@ -243,8 +243,9 @@ function goToLobby() {
   clearErrors();
 }
 
-// Logout
-btnLogout.addEventListener("click", () => {
+// Logout — clear server cookie + client state
+btnLogout.addEventListener("click", async () => {
+  try { await fetch("/api/logout", { method: "POST" }); } catch(e) {}
   currentUsername = null;
   loginUsername.value = "";
   loginPassword.value = "";
@@ -545,18 +546,27 @@ function animateMove(fromRow, fromCol, toRow, toCol, callback) {
   const dx = toRect.left - fromRect.left;
   const dy = toRect.top - fromRect.top;
 
+  // Remove any existing target piece (capture visual)
+  const targetPieceEl = toSquare.querySelector(".piece");
+  if (targetPieceEl) {
+    targetPieceEl.style.transition = "opacity 0.15s ease";
+    targetPieceEl.style.opacity = "0";
+  }
+
   // Elevate piece above others during animation
-  piece.style.zIndex = "10";
-  piece.style.transition = "transform 0.2s cubic-bezier(0.25, 0.1, 0.25, 1)";
+  piece.style.zIndex = "100";
+  piece.style.transition = "transform 0.18s cubic-bezier(0.25, 0.1, 0.25, 1)";
   piece.style.transform = `translate(${dx}px, ${dy}px)`;
 
-  // After animation, re-render
-  piece.addEventListener("transitionend", () => {
+  // Use a single reliable callback mechanism
+  let called = false;
+  const done = () => {
+    if (called) return;
+    called = true;
     callback();
-  }, { once: true });
-
-  // Fallback in case transitionend doesn't fire
-  setTimeout(callback, 250);
+  };
+  piece.addEventListener("transitionend", done, { once: true });
+  setTimeout(done, 220); // tight fallback
 }
 
 const renderBoard = () => {
@@ -937,16 +947,12 @@ socket.on("move", (move) => {
   const from = algebraicToRowCol(move.from);
   const to = algebraicToRowCol(move.to);
 
-  // Check if it's a capture
+  // Check if it's a capture before applying
   const boardBefore = chess.board();
   const targetPiece = boardBefore[to.row] && boardBefore[to.row][to.col];
 
-  // Animate the piece sliding
-  let animated = false;
+  // Animate the piece sliding, then apply the move
   animateMove(from.row, from.col, to.row, to.col, () => {
-    if (animated) return; // Prevent double-fire
-    animated = true;
-
     chess.move(move);
 
     // Store last move for highlighting
@@ -1022,16 +1028,6 @@ socket.on("playerCount", (data) => {
 // ============================================================
 
 let gameStartTime = Date.now();
-
-// Reset game timer when board loads
-const origBoardState = socket.listeners("boardState");
-
-// Track game start
-socket.on("boardState", () => {
-  if (chess.history().length === 0) {
-    gameStartTime = Date.now();
-  }
-});
 
 // --- Victory Quotes ---
 const WIN_QUOTES = [
@@ -1256,8 +1252,9 @@ socket.on("gameOver", (data) => {
 });
 
 // New game event (rematch)
-socket.on("newGame", () => {
+socket.on("newGame", (data) => {
   chess.reset();
+  if (data && data.fen) chess.load(data.fen);
   lastMove = null;
   selectedSquare = null;
   gameStartTime = Date.now();
@@ -1269,7 +1266,7 @@ socket.on("newGame", () => {
 });
 
 // Invalid move — silently ignore (piece snaps back)
-socket.on("Invalid move", () => {});
+socket.on("invalidMove", () => { renderBoard(); });
 
 // ============================================================
 //  CHAT SYSTEM
@@ -1604,12 +1601,26 @@ function applyBoardTheme(theme) {
   localStorage.setItem("chess-board-theme", theme);
 }
 
-// Listen for theme changes in lobby
+// Listen for theme changes in lobby — also broadcast to opponent
 const themeRadios = document.querySelectorAll('input[name="board-theme"]');
 themeRadios.forEach((radio) => {
   radio.addEventListener("change", (e) => {
     applyBoardTheme(e.target.value);
+    // Broadcast theme to room so both players see the same board
+    if (currentRoomCode) {
+      socket.emit("boardTheme", e.target.value);
+    }
   });
+});
+
+// Receive theme from opponent
+socket.on("boardTheme", (data) => {
+  if (data && data.theme) {
+    applyBoardTheme(data.theme);
+    // Update the radio in lobby if visible
+    const radio = document.querySelector(`input[name="board-theme"][value="${data.theme}"]`);
+    if (radio) radio.checked = true;
+  }
 });
 
 // Load saved theme on startup
@@ -1619,10 +1630,28 @@ if (savedRadio) savedRadio.checked = true;
 applyBoardTheme(savedTheme);
 
 // ============================================================
+//  AUTO-LOGIN: Check for existing session cookie
+// ============================================================
+
+async function tryAutoLogin() {
+  try {
+    const res = await fetch("/api/me");
+    const data = await res.json();
+    if (data.loggedIn && data.username) {
+      currentUsername = data.username;
+      goToLobby();
+      return;
+    }
+  } catch (e) {
+    // Cookie missing or expired — show login screen
+  }
+  showScreen(authScreen);
+  renderBoard();
+  updateMoveList();
+}
+
+// ============================================================
 //  INITIAL STATE
 // ============================================================
 
-// Start on auth screen
-showScreen(authScreen);
-renderBoard();
-updateMoveList();
+tryAutoLogin();
