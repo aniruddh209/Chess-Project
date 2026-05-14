@@ -1,3 +1,8 @@
+# ♟️ ChessPlay — Real-Time Multiplayer Chess
+
+[![Live Demo](https://img.shields.io/badge/Live-Demo-green?style=for-the-badge)](https://your-website-url.com)
+
+A real-time multiplayer chess platform built with Node.js, Socket.IO, and MongoDB.
 # ♟️ ChessPlay — Real-Time Multiplayer Chess Platform
 
 A production-ready, full-stack multiplayer chess application built with **Node.js**, **Express**, **Socket.IO**, and **MongoDB**.  
