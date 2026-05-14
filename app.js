@@ -15,8 +15,10 @@ const Game = require("./models/Game");
 //  MONGODB CONNECTION
 // ============================================================
 
+const MONGODB_URI = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/chessplay";
+
 mongoose
-  .connect("mongodb://127.0.0.1:27017/chessplay")
+  .connect(MONGODB_URI)
   .then(() => console.log("✅ MongoDB connected"))
   .catch((err) => console.error("❌ MongoDB error:", err.message));
 
@@ -763,6 +765,7 @@ io.on("connection", (uniquesocket) => {
 //  START SERVER
 // ============================================================
 
-server.listen(3000, function () {
-  console.log("listening on port:3000");
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, function () {
+  console.log(`listening on port:${PORT}`);
 });
