@@ -432,7 +432,59 @@ function getAIMove(chessInstance, difficulty) {
   return bestMove;
 }
 
-// Make AI move with realistic delay
+// ============================================================
+//  TIMER SYSTEM — single shared game clock, timeout = draw
+// ============================================================
+
+function startTimer(roomCode) {
+  const room = rooms.get(roomCode);
+  if (!room || room.gameOver || room.timeControl === 0) return;
+
+  stopTimer(roomCode);
+  room.lastTickTime = Date.now();
+
+  room.timerInterval = setInterval(() => {
+    const current = rooms.get(roomCode);
+    if (!current || current.gameOver) { stopTimer(roomCode); return; }
+
+    const now = Date.now();
+    const elapsed = (now - current.lastTickTime) / 1000;
+    current.lastTickTime = now;
+    current.gameTimer -= elapsed;
+
+    if (current.gameTimer <= 0) {
+      current.gameTimer = 0;
+      current.gameOver = true;
+      current.gameOverReason = "timeout";
+      stopTimer(roomCode);
+      io.to(roomCode).emit("timerUpdate", { time: 0 });
+      io.to(roomCode).emit("gameOver", {
+        reason: "timeout",
+        winner: null,
+        winnerName: null,
+      });
+      recordGame(current);
+      return;
+    }
+
+    io.to(roomCode).emit("timerUpdate", { time: current.gameTimer });
+  }, 1000);
+}
+
+function stopTimer(roomCode) {
+  const room = rooms.get(roomCode);
+  if (!room) return;
+  if (room.timerInterval) {
+    clearInterval(room.timerInterval);
+    room.timerInterval = null;
+  }
+}
+
+// ============================================================
+//  AI ENGINE — realistic thinking delays
+// ============================================================
+
+// Make AI move with realistic delay (level-dependent)
 function scheduleAIMove(roomCode) {
   const room = rooms.get(roomCode);
   if (!room || !room.isAI || room.gameOver) return;
@@ -440,7 +492,14 @@ function scheduleAIMove(roomCode) {
   const aiColor = room.aiColor;
   if (room.chess.turn() !== aiColor) return;
 
-  const delay = 400 + Math.random() * 600; // 400-1000ms
+  // Realistic thinking time per difficulty
+  let delay;
+  switch (room.aiDifficulty) {
+    case "easy":   delay = 500 + Math.random() * 700; break;   // 0.5-1.2s
+    case "medium": delay = 1000 + Math.random() * 1500; break; // 1.0-2.5s
+    case "hard":   delay = 1500 + Math.random() * 2000; break; // 1.5-3.5s
+    default:       delay = 800 + Math.random() * 1200; break;
+  }
 
   setTimeout(() => {
     const currentRoom = rooms.get(roomCode);
@@ -455,14 +514,16 @@ function scheduleAIMove(roomCode) {
     currentRoom.moveHistory.push(moveObj);
 
     io.to(roomCode).emit("move", moveObj);
-    io.to(roomCode).emit("boardState", currentRoom.chess.fen());
 
-    // Check game over
+    // Check game over after AI move
     checkGameOver(currentRoom, roomCode);
   }, delay);
 }
 
 function checkGameOver(room, roomCode) {
+  const isOver = room.chess.isCheckmate() || room.chess.isStalemate() || room.chess.isDraw() || room.chess.isThreefoldRepetition() || room.chess.isInsufficientMaterial();
+  if (isOver) stopTimer(roomCode);
+
   if (room.chess.isCheckmate()) {
     const winnerColor = room.chess.turn() === "w" ? "black" : "white";
     room.gameOver = true;
@@ -550,6 +611,11 @@ io.on("connection", (uniquesocket) => {
       isAI: false,
       aiColor: null,
       aiDifficulty: null,
+      // Timer system
+      timeControl: parseInt(data.timeControl) || 600,
+      gameTimer: parseInt(data.timeControl) || 600,
+      timerInterval: null,
+      lastTickTime: null,
     };
 
     // Assign creator to their chosen color
@@ -561,7 +627,7 @@ io.on("connection", (uniquesocket) => {
     socketUsers.set(uniquesocket.id, username);
     uniquesocket.join(roomCode);
 
-    uniquesocket.emit("roomCreated", { roomCode });
+    uniquesocket.emit("roomCreated", { roomCode, timeControl: room.timeControl });
     uniquesocket.emit("playerRole", creatorColor === "white" ? "w" : "b");
     uniquesocket.emit("boardState", room.chess.fen());
 
@@ -578,6 +644,7 @@ io.on("connection", (uniquesocket) => {
 
     const aiColor = playerColor === "white" ? "black" : "white";
     const roomCode = generateRoomCode();
+    const tc = parseInt(data.timeControl) || 600;
 
     const room = {
       code: roomCode,
@@ -593,6 +660,11 @@ io.on("connection", (uniquesocket) => {
       isAI: true,
       aiColor: aiColor === "white" ? "w" : "b",
       aiDifficulty: difficulty,
+      // Timer system
+      timeControl: tc,
+      gameTimer: tc,
+      timerInterval: null,
+      lastTickTime: null,
     };
 
     room.players[playerColor] = uniquesocket.id;
@@ -605,10 +677,16 @@ io.on("connection", (uniquesocket) => {
     socketUsers.set(uniquesocket.id, username);
     uniquesocket.join(roomCode);
 
-    uniquesocket.emit("roomJoined", { roomCode });
+    uniquesocket.emit("roomJoined", { roomCode, timeControl: room.timeControl });
     uniquesocket.emit("playerRole", playerColor === "white" ? "w" : "b");
     uniquesocket.emit("boardState", room.chess.fen());
     broadcastRoomState(roomCode);
+
+    // Send initial timer and start game clock
+    if (tc > 0) {
+      io.to(roomCode).emit("timerUpdate", { time: room.gameTimer });
+      startTimer(roomCode);
+    }
 
     io.to(roomCode).emit("chatSystem", `🤖 Playing against AI (${difficulty})`);
     console.log(`AI game: ${username} (${playerColor}) vs AI (${difficulty})`);
@@ -660,10 +738,16 @@ io.on("connection", (uniquesocket) => {
       console.log(`${username} joined room ${roomCode} as Spectator`);
     }
 
-    uniquesocket.emit("roomJoined", { roomCode });
+    uniquesocket.emit("roomJoined", { roomCode, timeControl: room.timeControl });
     uniquesocket.emit("boardState", room.chess.fen());
     broadcastRoomState(roomCode);
     io.to(roomCode).emit("chatSystem", `${username} joined the game`);
+
+    // Start game clock when both players are in (PvP)
+    if (room.players.white && room.players.black && room.timeControl > 0) {
+      io.to(roomCode).emit("timerUpdate", { time: room.gameTimer });
+      startTimer(roomCode);
+    }
   });
 
   // ---------- Move ----------
@@ -693,7 +777,6 @@ io.on("connection", (uniquesocket) => {
         uniquesocket.emit("invalidMove", move);
       }
     } catch {
-      // Invalid move — silently ignore (piece snaps back)
       uniquesocket.emit("invalidMove", move);
     }
   });
@@ -714,6 +797,7 @@ io.on("connection", (uniquesocket) => {
     room.gameOver = true;
     room.winner = winnerColor;
     room.gameOverReason = "resignation";
+    stopTimer(roomCode);
 
     io.to(roomCode).emit("gameOver", {
       reason: "resignation",

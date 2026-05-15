@@ -211,7 +211,7 @@
         </div>
 
         <!-- Game Mode Cards -->
-        <h2 class="section-title" style="margin-bottom:20px;">🎮 Start a Game</h2>
+        <h2 class="section-title">🎮 Start a Game</h2>
         <div class="lobby-cards">
           <!-- Create Room Card -->
           <div class="lobby-card glass-panel" id="card-create">
@@ -234,6 +234,16 @@
                 <span class="color-swatch color-random">🎲</span>
                 <span>Random</span>
               </label>
+            </div>
+            <div class="time-picker">
+              <span class="time-picker-label">⏱ Time Control</span>
+              <div class="time-options">
+                <label class="time-option"><input type="radio" name="create-time" value="300" /><span class="time-badge">5 min</span></label>
+                <label class="time-option"><input type="radio" name="create-time" value="600" checked /><span class="time-badge">10 min</span></label>
+                <label class="time-option"><input type="radio" name="create-time" value="900" /><span class="time-badge">15 min</span></label>
+                <label class="time-option"><input type="radio" name="create-time" value="1800" /><span class="time-badge">30 min</span></label>
+                <label class="time-option"><input type="radio" name="create-time" value="0" /><span class="time-badge">∞</span></label>
+              </div>
             </div>
             <button id="btn-create-room" class="btn btn-primary btn-full">Create Room</button>
           </div>
@@ -269,7 +279,7 @@
                 <span class="diff-badge diff-hard">Hard</span>
               </label>
             </div>
-            <div class="color-picker" style="margin-top:10px;">
+            <div class="color-picker">
               <label class="color-option">
                 <input type="radio" name="ai-color" value="white" checked />
                 <span class="color-swatch color-white">♔</span>
@@ -286,7 +296,16 @@
                 <span>Random</span>
               </label>
             </div>
-            <button id="btn-play-ai" class="btn btn-primary btn-full" style="margin-top:14px;">Play AI</button>
+            <div class="time-picker">
+              <span class="time-picker-label">⏱ Time Control</span>
+              <div class="time-options">
+                <label class="time-option"><input type="radio" name="ai-time" value="300" /><span class="time-badge">5 min</span></label>
+                <label class="time-option"><input type="radio" name="ai-time" value="600" checked /><span class="time-badge">10 min</span></label>
+                <label class="time-option"><input type="radio" name="ai-time" value="900" /><span class="time-badge">15 min</span></label>
+                <label class="time-option"><input type="radio" name="ai-time" value="0" /><span class="time-badge">∞</span></label>
+              </div>
+            </div>
+            <button id="btn-play-ai" class="btn btn-primary btn-full">Play AI</button>
           </div>
         </div>
 
@@ -382,8 +401,14 @@
       <main id="game-area">
         <div class="game-container">
 
-          <!-- Left Sidebar — Captured Pieces -->
+          <!-- Left Sidebar — Moves + Captured -->
           <aside class="sidebar sidebar-left">
+            <div class="panel glass-panel moves-panel">
+              <h3 class="panel-title">📋 Moves</h3>
+              <div class="move-list" id="move-list">
+                <div class="move-placeholder">No moves yet</div>
+              </div>
+            </div>
             <div class="panel glass-panel">
               <h3 class="panel-title">Captured</h3>
               <div class="captured-section">
@@ -395,51 +420,24 @@
                 <div class="captured-pieces" id="captured-by-black"></div>
               </div>
             </div>
-
-            <!-- Board Theme Picker (in-game) -->
-            <div class="panel glass-panel ingame-theme-panel">
-              <h3 class="panel-title">🎨 Board</h3>
-              <div class="ingame-theme-grid" id="ingame-theme-grid">
-                <button class="ingame-theme-btn active" data-theme="classic" title="Classic Wood">
-                  <div class="it-preview"><div class="it-sq" style="background:#f0d9b5;"></div><div class="it-sq" style="background:#b58863;"></div><div class="it-sq" style="background:#b58863;"></div><div class="it-sq" style="background:#f0d9b5;"></div></div>
-                </button>
-                <button class="ingame-theme-btn" data-theme="emerald" title="Emerald">
-                  <div class="it-preview"><div class="it-sq" style="background:#eeeed2;"></div><div class="it-sq" style="background:#769656;"></div><div class="it-sq" style="background:#769656;"></div><div class="it-sq" style="background:#eeeed2;"></div></div>
-                </button>
-                <button class="ingame-theme-btn" data-theme="ice" title="Blue Ice">
-                  <div class="it-preview"><div class="it-sq" style="background:#dee3e6;"></div><div class="it-sq" style="background:#8ca2ad;"></div><div class="it-sq" style="background:#8ca2ad;"></div><div class="it-sq" style="background:#dee3e6;"></div></div>
-                </button>
-                <button class="ingame-theme-btn" data-theme="tournament" title="Tournament">
-                  <div class="it-preview"><div class="it-sq" style="background:#e8e0c8;"></div><div class="it-sq" style="background:#3a7d44;"></div><div class="it-sq" style="background:#3a7d44;"></div><div class="it-sq" style="background:#e8e0c8;"></div></div>
-                </button>
-                <button class="ingame-theme-btn" data-theme="marble" title="Marble">
-                  <div class="it-preview"><div class="it-sq" style="background:#f5f0e1;"></div><div class="it-sq" style="background:#6e6658;"></div><div class="it-sq" style="background:#6e6658;"></div><div class="it-sq" style="background:#f5f0e1;"></div></div>
-                </button>
-                <button class="ingame-theme-btn" data-theme="walnut" title="Walnut">
-                  <div class="it-preview"><div class="it-sq" style="background:#e6cba1;"></div><div class="it-sq" style="background:#7b4e2a;"></div><div class="it-sq" style="background:#7b4e2a;"></div><div class="it-sq" style="background:#e6cba1;"></div></div>
-                </button>
-              </div>
-            </div>
           </aside>
 
           <!-- Center — Board + Players -->
           <section class="board-section">
-            <!-- Opponent (top) -->
             <div class="player-bar player-bar-top" id="player-top">
               <div class="player-avatar">♚</div>
               <div class="player-info">
                 <span class="player-name">Black</span>
                 <span class="player-status">Waiting…</span>
               </div>
-              <div class="player-timer" id="timer-top">--:--</div>
             </div>
-
-            <!-- Game Status Banner -->
+            <div class="game-clock" id="game-clock" style="display:none;">
+              <span class="clock-icon">⏱</span>
+              <span class="clock-time" id="game-timer">--:--</span>
+            </div>
             <div class="game-status-banner" id="game-status" style="display:none;">
               <span class="status-text" id="status-text"></span>
             </div>
-
-            <!-- Chess Board -->
             <div class="board-wrapper">
               <div class="board-coords board-coords-files">
                 <span>a</span><span>b</span><span>c</span><span>d</span><span>e</span><span>f</span><span>g</span><span>h</span>
@@ -447,33 +445,19 @@
               <div class="board-coords board-coords-ranks">
                 <span>8</span><span>7</span><span>6</span><span>5</span><span>4</span><span>3</span><span>2</span><span>1</span>
               </div>
-              <div class="chessboard" id="chessboard">
-                <!-- Board squares rendered by JS -->
-              </div>
+              <div class="chessboard" id="chessboard"></div>
             </div>
-
-            <!-- Current Player (bottom) -->
             <div class="player-bar player-bar-bottom" id="player-bottom">
               <div class="player-avatar">♔</div>
               <div class="player-info">
                 <span class="player-name">White</span>
                 <span class="player-status">Waiting…</span>
               </div>
-              <div class="player-timer" id="timer-bottom">--:--</div>
             </div>
           </section>
 
-          <!-- Right Sidebar — Moves + Controls + Chat -->
+          <!-- Right Sidebar — Chat + Controls -->
           <aside class="sidebar sidebar-right">
-            <!-- Move History Table -->
-            <div class="panel glass-panel moves-panel">
-              <h3 class="panel-title">📋 Moves</h3>
-              <div class="move-list" id="move-list">
-                <div class="move-placeholder">No moves yet</div>
-              </div>
-            </div>
-
-            <!-- Chat Panel -->
             <div class="panel glass-panel chat-panel" id="chat-panel">
               <div class="chat-header">
                 <h3 class="panel-title">💬 Chat</h3>
@@ -505,8 +489,6 @@
                 </button>
               </div>
             </div>
-
-            <!-- Game Controls -->
             <div class="panel glass-panel game-controls">
               <button class="btn btn-accent" id="btn-new-game" title="Rematch">
                 <span>↻</span> Rematch
@@ -520,9 +502,7 @@
             </div>
           </aside>
 
-          <!-- Mobile Chat Toggle -->
           <button id="btn-chat-toggle" class="chat-toggle-btn" title="Open Chat">💬</button>
-
         </div>
       </main>
 

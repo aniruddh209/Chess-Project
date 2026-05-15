@@ -14,7 +14,7 @@ const gameSchema = new mongoose.Schema({
   },
   reason: {
     type: String,
-    enum: ["checkmate", "stalemate", "draw", "disconnect", "abandon", "resignation", "threefold_repetition", "insufficient_material", "fifty_move_rule"],
+    enum: ["checkmate", "stalemate", "draw", "disconnect", "abandon", "resignation", "threefold_repetition", "insufficient_material", "fifty_move_rule", "timeout"],
     required: true,
   },
   winner: { type: String, default: null }, // username of winner

@@ -242,6 +242,11 @@ function goToLobby() {
   PlayerRole = null;
   currentRoomCode = null;
   clearErrors();
+  // Reset game clock
+  const clockEl = document.getElementById("game-clock");
+  if (clockEl) { clockEl.style.display = "none"; clockEl.classList.remove("timer-low"); }
+  const timerEl = document.getElementById("game-timer");
+  if (timerEl) timerEl.textContent = "--:--";
 }
 
 // Logout — clear server cookie + client state
@@ -261,9 +266,10 @@ btnLogout.addEventListener("click", async () => {
 // Create Room (with color selection)
 btnCreateRoom.addEventListener("click", () => {
   const color = document.querySelector('input[name="create-color"]:checked')?.value || "white";
+  const timeControl = document.querySelector('input[name="create-time"]:checked')?.value || "600";
   btnCreateRoom.disabled = true;
   btnCreateRoom.textContent = "Creating...";
-  socket.emit("createRoom", { username: currentUsername, color });
+  socket.emit("createRoom", { username: currentUsername, color, timeControl });
 });
 
 // Play vs AI
@@ -271,9 +277,10 @@ if (btnPlayAI) {
   btnPlayAI.addEventListener("click", () => {
     const difficulty = document.querySelector('input[name="ai-diff"]:checked')?.value || "medium";
     const color = document.querySelector('input[name="ai-color"]:checked')?.value || "white";
+    const timeControl = document.querySelector('input[name="ai-time"]:checked')?.value || "600";
     btnPlayAI.disabled = true;
     btnPlayAI.textContent = "Starting...";
-    socket.emit("playAI", { username: currentUsername, difficulty, color });
+    socket.emit("playAI", { username: currentUsername, difficulty, color, timeControl });
     setTimeout(() => {
       btnPlayAI.disabled = false;
       btnPlayAI.textContent = "Play AI";
@@ -970,6 +977,28 @@ socket.on("spectatorRole", () => {
   updateMoveList();
 });
 
+// Timer display — single game clock above board
+socket.on("timerUpdate", (data) => {
+  const clockEl = document.getElementById("game-clock");
+  const timerEl = document.getElementById("game-timer");
+  if (!clockEl || !timerEl) return;
+
+  const secs = data.time;
+
+  if (secs <= 0) {
+    timerEl.textContent = "0:00";
+    clockEl.classList.add("timer-low");
+    return;
+  }
+
+  const m = Math.floor(secs / 60);
+  const s = Math.floor(secs % 60);
+  timerEl.textContent = `${m}:${s.toString().padStart(2, "0")}`;
+
+  clockEl.style.display = "flex";
+  clockEl.classList.toggle("timer-low", secs <= 30);
+});
+
 socket.on("boardState", (fen) => {
   chess.load(fen);
   preloadPieceImages();
@@ -1289,6 +1318,11 @@ socket.on("gameOver", (data) => {
       message = `${data.disconnectedName} left the game. ${data.winnerName} wins.`;
       quote = getRandomQuote(LOSS_QUOTES);
     }
+  } else if (data.reason === "timeout") {
+    icon = "⏰";
+    title = "Time's Up!";
+    message = "The game clock ran out — it's a draw!";
+    quote = getRandomQuote(DRAW_QUOTES);
   }
 
   modalIcon.textContent = icon;
@@ -1659,7 +1693,7 @@ if (btnModalLobby) {
 }
 
 // ============================================================
-//  BOARD THEME SELECTOR — Per-user (each player picks their own)
+//  BOARD THEME SELECTOR — Dashboard only
 // ============================================================
 
 function applyBoardTheme(theme) {
@@ -1672,15 +1706,8 @@ function applyBoardTheme(theme) {
     boardElement.classList.add(`theme-${theme}`);
   }
   localStorage.setItem("chess-board-theme", theme);
-
-  // Update lobby theme radio
   const radio = document.querySelector(`input[name="board-theme"][value="${theme}"]`);
   if (radio) radio.checked = true;
-
-  // Update in-game theme buttons
-  document.querySelectorAll(".ingame-theme-btn").forEach((btn) => {
-    btn.classList.toggle("active", btn.dataset.theme === theme);
-  });
 }
 
 // Lobby theme radios
@@ -1688,13 +1715,6 @@ const themeRadios = document.querySelectorAll('input[name="board-theme"]');
 themeRadios.forEach((radio) => {
   radio.addEventListener("change", (e) => {
     applyBoardTheme(e.target.value);
-  });
-});
-
-// In-game theme buttons
-document.querySelectorAll(".ingame-theme-btn").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    applyBoardTheme(btn.dataset.theme);
   });
 });
 
