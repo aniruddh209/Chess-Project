@@ -382,7 +382,7 @@
       <main id="game-area">
         <div class="game-container">
 
-          <!-- Left Sidebar — Captured Pieces & Info -->
+          <!-- Left Sidebar — Captured Pieces -->
           <aside class="sidebar sidebar-left">
             <div class="panel glass-panel">
               <h3 class="panel-title">Captured</h3>
@@ -393,6 +393,31 @@
               <div class="captured-section">
                 <div class="captured-label">By Black</div>
                 <div class="captured-pieces" id="captured-by-black"></div>
+              </div>
+            </div>
+
+            <!-- Board Theme Picker (in-game) -->
+            <div class="panel glass-panel ingame-theme-panel">
+              <h3 class="panel-title">🎨 Board</h3>
+              <div class="ingame-theme-grid" id="ingame-theme-grid">
+                <button class="ingame-theme-btn active" data-theme="classic" title="Classic Wood">
+                  <div class="it-preview"><div class="it-sq" style="background:#f0d9b5;"></div><div class="it-sq" style="background:#b58863;"></div><div class="it-sq" style="background:#b58863;"></div><div class="it-sq" style="background:#f0d9b5;"></div></div>
+                </button>
+                <button class="ingame-theme-btn" data-theme="emerald" title="Emerald">
+                  <div class="it-preview"><div class="it-sq" style="background:#eeeed2;"></div><div class="it-sq" style="background:#769656;"></div><div class="it-sq" style="background:#769656;"></div><div class="it-sq" style="background:#eeeed2;"></div></div>
+                </button>
+                <button class="ingame-theme-btn" data-theme="ice" title="Blue Ice">
+                  <div class="it-preview"><div class="it-sq" style="background:#dee3e6;"></div><div class="it-sq" style="background:#8ca2ad;"></div><div class="it-sq" style="background:#8ca2ad;"></div><div class="it-sq" style="background:#dee3e6;"></div></div>
+                </button>
+                <button class="ingame-theme-btn" data-theme="tournament" title="Tournament">
+                  <div class="it-preview"><div class="it-sq" style="background:#e8e0c8;"></div><div class="it-sq" style="background:#3a7d44;"></div><div class="it-sq" style="background:#3a7d44;"></div><div class="it-sq" style="background:#e8e0c8;"></div></div>
+                </button>
+                <button class="ingame-theme-btn" data-theme="marble" title="Marble">
+                  <div class="it-preview"><div class="it-sq" style="background:#f5f0e1;"></div><div class="it-sq" style="background:#6e6658;"></div><div class="it-sq" style="background:#6e6658;"></div><div class="it-sq" style="background:#f5f0e1;"></div></div>
+                </button>
+                <button class="ingame-theme-btn" data-theme="walnut" title="Walnut">
+                  <div class="it-preview"><div class="it-sq" style="background:#e6cba1;"></div><div class="it-sq" style="background:#7b4e2a;"></div><div class="it-sq" style="background:#7b4e2a;"></div><div class="it-sq" style="background:#e6cba1;"></div></div>
+                </button>
               </div>
             </div>
           </aside>
@@ -438,23 +463,14 @@
             </div>
           </section>
 
-          <!-- Right Sidebar — Move History -->
+          <!-- Right Sidebar — Moves + Controls + Chat -->
           <aside class="sidebar sidebar-right">
-            <div class="panel glass-panel">
-              <h3 class="panel-title">Moves</h3>
+            <!-- Move History Table -->
+            <div class="panel glass-panel moves-panel">
+              <h3 class="panel-title">📋 Moves</h3>
               <div class="move-list" id="move-list">
                 <div class="move-placeholder">No moves yet</div>
               </div>
-            </div>
-
-            <!-- Game Controls -->
-            <div class="panel glass-panel game-controls">
-              <button class="btn btn-secondary" id="btn-new-game" title="New Game">
-                <span>↻</span> Rematch
-              </button>
-              <button class="btn btn-secondary" id="btn-leave-game" title="Leave Game">
-                <span>←</span> Leave Game
-              </button>
             </div>
 
             <!-- Chat Panel -->
@@ -489,9 +505,22 @@
                 </button>
               </div>
             </div>
+
+            <!-- Game Controls -->
+            <div class="panel glass-panel game-controls">
+              <button class="btn btn-accent" id="btn-new-game" title="Rematch">
+                <span>↻</span> Rematch
+              </button>
+              <button class="btn btn-danger" id="btn-resign" title="Resign">
+                <span>🏳️</span> Resign
+              </button>
+              <button class="btn btn-secondary" id="btn-leave-game" title="Leave Game">
+                <span>←</span> Leave
+              </button>
+            </div>
           </aside>
 
-          <!-- Mobile Chat Toggle (visible when sidebar is hidden) -->
+          <!-- Mobile Chat Toggle -->
           <button id="btn-chat-toggle" class="chat-toggle-btn" title="Open Chat">💬</button>
 
         </div>

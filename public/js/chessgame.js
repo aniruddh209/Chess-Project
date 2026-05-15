@@ -86,6 +86,7 @@ const playerTopEl = document.getElementById("player-top");
 const playerBottomEl = document.getElementById("player-bottom");
 const btnNewGame = document.getElementById("btn-new-game");
 const btnLeaveGame = document.getElementById("btn-leave-game");
+const btnResign = document.getElementById("btn-resign");
 const gameRoomCode = document.getElementById("game-room-code");
 
 // Modal elements
@@ -477,6 +478,23 @@ function playCheckSound() {
   }
 }
 
+function playGameOverSound() {
+  ensureAudio();
+  const notes = [880, 784, 660, 440];
+  notes.forEach((freq, i) => {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime + i * 0.15);
+    gain.gain.setValueAtTime(0.12, audioCtx.currentTime + i * 0.15);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + i * 0.15 + 0.3);
+    osc.start(audioCtx.currentTime + i * 0.15);
+    osc.stop(audioCtx.currentTime + i * 0.15 + 0.3);
+  });
+}
+
 // Get legal moves for a square position
 function getLegalMovesFrom(row, col) {
   const sq = `${String.fromCharCode(97 + col)}${8 - row}`;
@@ -589,6 +607,15 @@ const renderBoard = () => {
           (rowindex === lastMove.to.row && squareindex === lastMove.to.col)
         ) {
           squareElement.classList.add("highlight");
+        }
+      }
+
+      // King in check / checkmate highlighting
+      if (square && square.type === "k") {
+        if (chess.isCheckmate() && chess.turn() === square.color) {
+          squareElement.classList.add("king-checkmate");
+        } else if (chess.isCheck() && chess.turn() === square.color) {
+          squareElement.classList.add("king-in-check");
         }
       }
 
@@ -765,11 +792,20 @@ function updateGameStatus() {
 
   if (chess.isCheckmate()) {
     const winner = chess.turn() === "w" ? "Black" : "White";
-    statusText.textContent = `♚ Checkmate! ${winner} wins!`;
+    const loser = chess.turn() === "w" ? "White" : "Black";
+    statusText.textContent = `♚ Checkmate! ${loser}'s king had no escape — ${winner} wins!`;
     gameStatusBanner.className = "game-status-banner gameover";
     gameStatusBanner.style.display = "block";
   } else if (chess.isStalemate()) {
-    statusText.textContent = "½ Stalemate — Draw";
+    statusText.textContent = "½ Stalemate — No legal moves, it's a draw!";
+    gameStatusBanner.className = "game-status-banner gameover";
+    gameStatusBanner.style.display = "block";
+  } else if (chess.isThreefoldRepetition()) {
+    statusText.textContent = "½ Threefold Repetition — Draw";
+    gameStatusBanner.className = "game-status-banner gameover";
+    gameStatusBanner.style.display = "block";
+  } else if (chess.isInsufficientMaterial()) {
+    statusText.textContent = "½ Insufficient Material — Draw";
     gameStatusBanner.className = "game-status-banner gameover";
     gameStatusBanner.style.display = "block";
   } else if (chess.isDraw()) {
@@ -959,7 +995,9 @@ socket.on("move", (move) => {
     lastMove = { from, to };
 
     // Play appropriate sound
-    if (chess.inCheck()) {
+    if (chess.isCheckmate() || chess.isStalemate() || chess.isDraw()) {
+      playGameOverSound();
+    } else if (chess.inCheck()) {
       playCheckSound();
     } else if (targetPiece || move.captured) {
       playCaptureSound();
@@ -1181,25 +1219,52 @@ socket.on("gameOver", (data) => {
   if (data.reason === "checkmate") {
     if (isWin) {
       icon = "👑";
-      title = "Victory!";
-      message = "You delivered checkmate — Brilliant!";
+      title = "Checkmate!";
+      message = "You delivered checkmate — your opponent's king had no escape. Brilliant!";
       quote = getRandomQuote(WIN_QUOTES);
     } else {
-      icon = "😔";
+      icon = "♚";
       title = "Checkmate";
-      message = `${data.winnerName} wins by checkmate.`;
+      message = `Your king was in check with no escape — ${data.winnerName} wins!`;
       quote = getRandomQuote(LOSS_QUOTES);
     }
   } else if (data.reason === "stalemate") {
     icon = "🤝";
     title = "Stalemate";
-    message = "No legal moves — the game is drawn.";
+    message = "No legal moves available — the game is a draw!";
+    quote = getRandomQuote(DRAW_QUOTES);
+  } else if (data.reason === "threefold_repetition") {
+    icon = "🔄";
+    title = "Threefold Repetition";
+    message = "The same position occurred three times — draw!";
+    quote = getRandomQuote(DRAW_QUOTES);
+  } else if (data.reason === "insufficient_material") {
+    icon = "♟";
+    title = "Insufficient Material";
+    message = "Neither player has enough pieces to checkmate — draw!";
+    quote = getRandomQuote(DRAW_QUOTES);
+  } else if (data.reason === "fifty_move_rule") {
+    icon = "⏰";
+    title = "50-Move Rule";
+    message = "50 moves without a capture or pawn move — draw!";
     quote = getRandomQuote(DRAW_QUOTES);
   } else if (data.reason === "draw") {
     icon = "🤝";
     title = "Draw";
     message = "The game ended in a draw.";
     quote = getRandomQuote(DRAW_QUOTES);
+  } else if (data.reason === "resignation") {
+    if (isWin) {
+      icon = "🏆";
+      title = "You Win!";
+      message = `${data.resignedName || "Opponent"} resigned — victory is yours!`;
+      quote = getRandomQuote(WIN_QUOTES);
+    } else {
+      icon = "🏳️";
+      title = "You Resigned";
+      message = `${data.winnerName} wins by resignation.`;
+      quote = getRandomQuote(LOSS_QUOTES);
+    }
   } else if (data.reason === "disconnect") {
     if (isWin) {
       icon = "🏆";
@@ -1553,6 +1618,16 @@ if (btnNewGame) {
   });
 }
 
+// Resign
+if (btnResign) {
+  btnResign.addEventListener("click", () => {
+    if (!PlayerRole || chess.isGameOver()) return;
+    if (confirm("Are you sure you want to resign?")) {
+      socket.emit("resign");
+    }
+  });
+}
+
 // Leave game — back to lobby
 if (btnLeaveGame) {
   btnLeaveGame.addEventListener("click", () => {
@@ -1584,49 +1659,47 @@ if (btnModalLobby) {
 }
 
 // ============================================================
-//  BOARD THEME SELECTOR
+//  BOARD THEME SELECTOR — Per-user (each player picks their own)
 // ============================================================
 
 function applyBoardTheme(theme) {
   if (!boardElement) return;
-  // Remove all theme classes
   boardElement.classList.remove(
     "theme-classic", "theme-emerald", "theme-ice",
     "theme-tournament", "theme-marble", "theme-walnut"
   );
-  // "classic" uses default CSS — no extra class needed
   if (theme && theme !== "classic") {
     boardElement.classList.add(`theme-${theme}`);
   }
   localStorage.setItem("chess-board-theme", theme);
+
+  // Update lobby theme radio
+  const radio = document.querySelector(`input[name="board-theme"][value="${theme}"]`);
+  if (radio) radio.checked = true;
+
+  // Update in-game theme buttons
+  document.querySelectorAll(".ingame-theme-btn").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.theme === theme);
+  });
 }
 
-// Listen for theme changes in lobby — also broadcast to opponent
+// Lobby theme radios
 const themeRadios = document.querySelectorAll('input[name="board-theme"]');
 themeRadios.forEach((radio) => {
   radio.addEventListener("change", (e) => {
     applyBoardTheme(e.target.value);
-    // Broadcast theme to room so both players see the same board
-    if (currentRoomCode) {
-      socket.emit("boardTheme", e.target.value);
-    }
   });
 });
 
-// Receive theme from opponent
-socket.on("boardTheme", (data) => {
-  if (data && data.theme) {
-    applyBoardTheme(data.theme);
-    // Update the radio in lobby if visible
-    const radio = document.querySelector(`input[name="board-theme"][value="${data.theme}"]`);
-    if (radio) radio.checked = true;
-  }
+// In-game theme buttons
+document.querySelectorAll(".ingame-theme-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    applyBoardTheme(btn.dataset.theme);
+  });
 });
 
 // Load saved theme on startup
 const savedTheme = localStorage.getItem("chess-board-theme") || "classic";
-const savedRadio = document.querySelector(`input[name="board-theme"][value="${savedTheme}"]`);
-if (savedRadio) savedRadio.checked = true;
 applyBoardTheme(savedTheme);
 
 // ============================================================

@@ -4,7 +4,12 @@ const socket = require("socket.io");
 const path = require("path");
 const http = require("http");
 const server = http.createServer(app);
-const io = socket(server);
+const io = socket(server, {
+  pingTimeout: 30000,
+  pingInterval: 15000,
+  maxHttpBufferSize: 1e6,
+  cors: { origin: "*" },
+});
 const { Chess } = require("chess.js");
 const mongoose = require("mongoose");
 const bcrypt = require("bcrypt");
@@ -12,6 +17,32 @@ const jwt = require("jsonwebtoken");
 const cookieParser = require("cookie-parser");
 const User = require("./models/User");
 const Game = require("./models/Game");
+
+// ============================================================
+//  RATE LIMITER — prevents abuse under heavy traffic
+// ============================================================
+const rateLimitMap = new Map();
+const RATE_LIMIT_WINDOW = 1000; // 1 second
+const RATE_LIMIT_MAX = 15; // max events per window
+
+function rateLimit(socketId) {
+  const now = Date.now();
+  const entry = rateLimitMap.get(socketId);
+  if (!entry || now - entry.start > RATE_LIMIT_WINDOW) {
+    rateLimitMap.set(socketId, { start: now, count: 1 });
+    return false;
+  }
+  entry.count++;
+  return entry.count > RATE_LIMIT_MAX;
+}
+
+// Cleanup stale entries every 30s
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, entry] of rateLimitMap) {
+    if (now - entry.start > RATE_LIMIT_WINDOW * 2) rateLimitMap.delete(id);
+  }
+}, 30000);
 
 // JWT Secret — in production use an environment variable
 const JWT_SECRET = process.env.JWT_SECRET || "chessplay_secret_key_2026_aniruddh";
@@ -444,14 +475,45 @@ function checkGameOver(room, roomCode) {
     });
     recordGame(room);
   } else if (room.chess.isStalemate()) {
+    // Stalemate = the current player has NO legal moves but is NOT in check → draw
     room.gameOver = true;
     room.gameOverReason = "stalemate";
-    io.to(roomCode).emit("gameOver", { reason: "stalemate", winner: null, winnerName: null });
+    io.to(roomCode).emit("gameOver", {
+      reason: "stalemate",
+      winner: null,
+      winnerName: null,
+      stalematedColor: room.chess.turn() === "w" ? "white" : "black",
+    });
+    recordGame(room);
+  } else if (room.chess.isThreefoldRepetition()) {
+    room.gameOver = true;
+    room.gameOverReason = "threefold_repetition";
+    io.to(roomCode).emit("gameOver", {
+      reason: "threefold_repetition",
+      winner: null,
+      winnerName: null,
+    });
+    recordGame(room);
+  } else if (room.chess.isInsufficientMaterial()) {
+    room.gameOver = true;
+    room.gameOverReason = "insufficient_material";
+    io.to(roomCode).emit("gameOver", {
+      reason: "insufficient_material",
+      winner: null,
+      winnerName: null,
+    });
     recordGame(room);
   } else if (room.chess.isDraw()) {
+    // Covers 50-move rule and other draw conditions
     room.gameOver = true;
-    room.gameOverReason = "draw";
-    io.to(roomCode).emit("gameOver", { reason: "draw", winner: null, winnerName: null });
+    const halfMoves = room.chess.fen().split(" ")[4];
+    const reason = parseInt(halfMoves) >= 100 ? "fifty_move_rule" : "draw";
+    room.gameOverReason = reason;
+    io.to(roomCode).emit("gameOver", {
+      reason,
+      winner: null,
+      winnerName: null,
+    });
     recordGame(room);
   }
 }
@@ -606,6 +668,7 @@ io.on("connection", (uniquesocket) => {
 
   // ---------- Move ----------
   uniquesocket.on("move", (move) => {
+    if (rateLimit(uniquesocket.id)) return;
     const roomCode = socketRooms.get(uniquesocket.id);
     if (!roomCode) return;
     const room = rooms.get(roomCode);
@@ -635,8 +698,35 @@ io.on("connection", (uniquesocket) => {
     }
   });
 
+  // ---------- Resign ----------
+  uniquesocket.on("resign", () => {
+    const roomCode = socketRooms.get(uniquesocket.id);
+    if (!roomCode) return;
+    const room = rooms.get(roomCode);
+    if (!room || room.gameOver) return;
+
+    let resignedColor = null;
+    if (uniquesocket.id === room.players.white) resignedColor = "white";
+    else if (uniquesocket.id === room.players.black) resignedColor = "black";
+    if (!resignedColor) return;
+
+    const winnerColor = resignedColor === "white" ? "black" : "white";
+    room.gameOver = true;
+    room.winner = winnerColor;
+    room.gameOverReason = "resignation";
+
+    io.to(roomCode).emit("gameOver", {
+      reason: "resignation",
+      winner: winnerColor,
+      winnerName: room.usernames[winnerColor] || (room.isAI ? `AI (${room.aiDifficulty})` : ""),
+      resignedName: room.usernames[resignedColor] || "",
+    });
+    recordGame(room);
+  });
+
   // ---------- Chat Message ----------
   uniquesocket.on("chatMessage", (data) => {
+    if (rateLimit(uniquesocket.id)) return;
     const roomCode = socketRooms.get(uniquesocket.id);
     const username = socketUsers.get(uniquesocket.id);
     if (!roomCode || !username) return;
@@ -750,13 +840,9 @@ io.on("connection", (uniquesocket) => {
     socketUsers.delete(uniquesocket.id);
   });
 
-  // ---------- Board Theme Sync ----------
-  uniquesocket.on("boardTheme", (theme) => {
-    const roomCode = socketRooms.get(uniquesocket.id);
-    if (!roomCode) return;
-    // Broadcast theme to all players in the room
-    io.to(roomCode).emit("boardTheme", { theme, from: socketUsers.get(uniquesocket.id) });
-  });
+  // ---------- Board Theme ----------
+  // Board theme is now per-user (stored in localStorage on client)
+  // No server-side broadcast needed — each player picks their own theme
 
   // ---------- Leave Room ----------
   uniquesocket.on("leaveRoom", () => {
