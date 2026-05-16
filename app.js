@@ -495,10 +495,10 @@ function scheduleAIMove(roomCode) {
   // Realistic thinking time per difficulty
   let delay;
   switch (room.aiDifficulty) {
-    case "easy":   delay = 500 + Math.random() * 700; break;   // 0.5-1.2s
+    case "easy": delay = 500 + Math.random() * 700; break;   // 0.5-1.2s
     case "medium": delay = 1000 + Math.random() * 1500; break; // 1.0-2.5s
-    case "hard":   delay = 1500 + Math.random() * 2000; break; // 1.5-3.5s
-    default:       delay = 800 + Math.random() * 1200; break;
+    case "hard": delay = 1500 + Math.random() * 2000; break; // 1.5-3.5s
+    default: delay = 800 + Math.random() * 1200; break;
   }
 
   setTimeout(() => {

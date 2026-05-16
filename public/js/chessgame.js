@@ -251,7 +251,7 @@ function goToLobby() {
 
 // Logout — clear server cookie + client state
 btnLogout.addEventListener("click", async () => {
-  try { await fetch("/api/logout", { method: "POST" }); } catch(e) {}
+  try { await fetch("/api/logout", { method: "POST" }); } catch (e) { }
   currentUsername = null;
   loginUsername.value = "";
   loginPassword.value = "";
@@ -950,6 +950,23 @@ socket.on("roomJoined", (data) => {
     btnPlayAI.textContent = "Play AI";
   }
 
+  // Handle timer visibility
+  const clockEl = document.getElementById("game-clock");
+  const timerEl = document.getElementById("game-timer");
+  if (clockEl && timerEl) {
+    if (data.timeControl && data.timeControl > 0) {
+      const m = Math.floor(data.timeControl / 60);
+      const s = data.timeControl % 60;
+      timerEl.textContent = `${m}:${s.toString().padStart(2, "0")}`;
+      clockEl.style.display = "flex";
+      clockEl.classList.remove("timer-low");
+    } else {
+      // Infinite — hide clock completely
+      clockEl.style.display = "none";
+      timerEl.textContent = "";
+    }
+  }
+
   // Go to game screen
   showScreen(gameScreen);
 });
@@ -1008,7 +1025,7 @@ socket.on("boardState", (fen) => {
 });
 
 socket.on("move", (move) => {
-  // Determine from/to positions for animation
+  // Determine from/to positions for highlighting
   const from = algebraicToRowCol(move.from);
   const to = algebraicToRowCol(move.to);
 
@@ -1016,27 +1033,33 @@ socket.on("move", (move) => {
   const boardBefore = chess.board();
   const targetPiece = boardBefore[to.row] && boardBefore[to.row][to.col];
 
-  // Animate the piece sliding, then apply the move
-  animateMove(from.row, from.col, to.row, to.col, () => {
+  // Apply move to chess engine IMMEDIATELY (no animation delay)
+  try {
     chess.move(move);
-
-    // Store last move for highlighting
-    lastMove = { from, to };
-
-    // Play appropriate sound
-    if (chess.isCheckmate() || chess.isStalemate() || chess.isDraw()) {
-      playGameOverSound();
-    } else if (chess.inCheck()) {
-      playCheckSound();
-    } else if (targetPiece || move.captured) {
-      playCaptureSound();
-    } else {
-      playMoveSound();
-    }
-
+  } catch (e) {
+    // Move already applied or invalid — just re-render
     renderBoard();
     updateMoveList();
-  });
+    return;
+  }
+
+  // Store last move for highlighting
+  lastMove = { from, to };
+
+  // Play appropriate sound
+  if (chess.isCheckmate() || chess.isStalemate() || chess.isDraw()) {
+    playGameOverSound();
+  } else if (chess.inCheck()) {
+    playCheckSound();
+  } else if (targetPiece || move.captured) {
+    playCaptureSound();
+  } else {
+    playMoveSound();
+  }
+
+  // Re-render immediately — no waiting for animation
+  renderBoard();
+  updateMoveList();
 });
 
 // Player names — update the player bar names
