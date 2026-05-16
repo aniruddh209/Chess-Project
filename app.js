@@ -304,79 +304,178 @@ async function recordGame(room) {
 }
 
 // ============================================================
-//  AI ENGINE — Minimax with Alpha-Beta Pruning
+//  AI ENGINE — Minimax + Alpha-Beta + Piece-Square Tables
 // ============================================================
 
-const PIECE_VALUES = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
+const PIECE_VALUES = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 20000 };
 
-// Simple piece-square tables for positional evaluation
-const PST_PAWN = [
-  0, 0, 0, 0, 0, 0, 0, 0,
-  5, 5, 5, 5, 5, 5, 5, 5,
-  1, 1, 2, 3, 3, 2, 1, 1,
-  0.5, 0.5, 1, 2.5, 2.5, 1, 0.5, 0.5,
-  0, 0, 0, 2, 2, 0, 0, 0,
-  0.5, -0.5, -1, 0, 0, -1, -0.5, 0.5,
-  0.5, 1, 1, -2, -2, 1, 1, 0.5,
-  0, 0, 0, 0, 0, 0, 0, 0,
-];
+// Piece-Square Tables (from white's perspective, row 0 = rank 8)
+const PST = {
+  p: [
+     0,  0,  0,  0,  0,  0,  0,  0,
+    50, 50, 50, 50, 50, 50, 50, 50,
+    10, 10, 20, 30, 30, 20, 10, 10,
+     5,  5, 10, 25, 25, 10,  5,  5,
+     0,  0,  0, 20, 20,  0,  0,  0,
+     5, -5,-10,  0,  0,-10, -5,  5,
+     5, 10, 10,-20,-20, 10, 10,  5,
+     0,  0,  0,  0,  0,  0,  0,  0,
+  ],
+  n: [
+   -50,-40,-30,-30,-30,-30,-40,-50,
+   -40,-20,  0,  0,  0,  0,-20,-40,
+   -30,  0, 10, 15, 15, 10,  0,-30,
+   -30,  5, 15, 20, 20, 15,  5,-30,
+   -30,  0, 15, 20, 20, 15,  0,-30,
+   -30,  5, 10, 15, 15, 10,  5,-30,
+   -40,-20,  0,  5,  5,  0,-20,-40,
+   -50,-40,-30,-30,-30,-30,-40,-50,
+  ],
+  b: [
+   -20,-10,-10,-10,-10,-10,-10,-20,
+   -10,  0,  0,  0,  0,  0,  0,-10,
+   -10,  0, 10, 10, 10, 10,  0,-10,
+   -10,  5,  5, 10, 10,  5,  5,-10,
+   -10,  0, 10, 10, 10, 10,  0,-10,
+   -10, 10, 10, 10, 10, 10, 10,-10,
+   -10,  5,  0,  0,  0,  0,  5,-10,
+   -20,-10,-10,-10,-10,-10,-10,-20,
+  ],
+  r: [
+     0,  0,  0,  0,  0,  0,  0,  0,
+     5, 10, 10, 10, 10, 10, 10,  5,
+    -5,  0,  0,  0,  0,  0,  0, -5,
+    -5,  0,  0,  0,  0,  0,  0, -5,
+    -5,  0,  0,  0,  0,  0,  0, -5,
+    -5,  0,  0,  0,  0,  0,  0, -5,
+    -5,  0,  0,  0,  0,  0,  0, -5,
+     0,  0,  0,  5,  5,  0,  0,  0,
+  ],
+  q: [
+   -20,-10,-10, -5, -5,-10,-10,-20,
+   -10,  0,  0,  0,  0,  0,  0,-10,
+   -10,  0,  5,  5,  5,  5,  0,-10,
+    -5,  0,  5,  5,  5,  5,  0, -5,
+     0,  0,  5,  5,  5,  5,  0, -5,
+   -10,  5,  5,  5,  5,  5,  0,-10,
+   -10,  0,  5,  0,  0,  0,  0,-10,
+   -20,-10,-10, -5, -5,-10,-10,-20,
+  ],
+  k: [ // Middlegame — stay castled, avoid center
+   -30,-40,-40,-50,-50,-40,-40,-30,
+   -30,-40,-40,-50,-50,-40,-40,-30,
+   -30,-40,-40,-50,-50,-40,-40,-30,
+   -30,-40,-40,-50,-50,-40,-40,-30,
+   -20,-30,-30,-40,-40,-30,-30,-20,
+   -10,-20,-20,-20,-20,-20,-20,-10,
+    20, 20,  0,  0,  0,  0, 20, 20,
+    20, 30, 10,  0,  0, 10, 30, 20,
+  ],
+  k_end: [ // Endgame — king should be active
+   -50,-40,-30,-20,-20,-30,-40,-50,
+   -30,-20,-10,  0,  0,-10,-20,-30,
+   -30,-10, 20, 30, 30, 20,-10,-30,
+   -30,-10, 30, 40, 40, 30,-10,-30,
+   -30,-10, 30, 40, 40, 30,-10,-30,
+   -30,-10, 20, 30, 30, 20,-10,-30,
+   -30,-30,  0,  0,  0,  0,-30,-30,
+   -50,-30,-30,-30,-30,-30,-30,-50,
+  ],
+};
 
-const PST_KNIGHT = [
-  -5, -4, -3, -3, -3, -3, -4, -5,
-  -4, -2, 0, 0, 0, 0, -2, -4,
-  -3, 0, 1, 1.5, 1.5, 1, 0, -3,
-  -3, 0.5, 1.5, 2, 2, 1.5, 0.5, -3,
-  -3, 0, 1.5, 2, 2, 1.5, 0, -3,
-  -3, 0.5, 1, 1.5, 1.5, 1, 0.5, -3,
-  -4, -2, 0, 0.5, 0.5, 0, -2, -4,
-  -5, -4, -3, -3, -3, -3, -4, -5,
-];
-
-function evaluateBoard(chessInstance) {
-  if (chessInstance.isCheckmate()) {
-    return chessInstance.turn() === "w" ? -9999 : 9999;
+function isEndgame(board) {
+  let queens = 0, minors = 0;
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      const p = board[r][c];
+      if (!p) continue;
+      if (p.type === "q") queens++;
+      if (p.type === "n" || p.type === "b") minors++;
+    }
   }
-  if (chessInstance.isDraw() || chessInstance.isStalemate()) return 0;
+  return queens === 0 || (queens <= 2 && minors <= 2);
+}
+
+function evaluateBoard(chess) {
+  if (chess.isCheckmate()) {
+    return chess.turn() === "w" ? -99999 : 99999;
+  }
+  if (chess.isDraw() || chess.isStalemate()) return 0;
 
   let score = 0;
-  const board = chessInstance.board();
+  const board = chess.board();
+  const endgame = isEndgame(board);
 
   for (let r = 0; r < 8; r++) {
     for (let c = 0; c < 8; c++) {
       const piece = board[r][c];
       if (!piece) continue;
 
-      let value = PIECE_VALUES[piece.type] || 0;
       const idx = r * 8 + c;
       const mirrorIdx = (7 - r) * 8 + c;
 
-      // Add positional bonus
-      if (piece.type === "p") value += (piece.color === "w" ? PST_PAWN[mirrorIdx] : PST_PAWN[idx]) * 0.1;
-      else if (piece.type === "n") value += (piece.color === "w" ? PST_KNIGHT[mirrorIdx] : PST_KNIGHT[idx]) * 0.1;
+      // Material value
+      let value = PIECE_VALUES[piece.type];
+
+      // Positional value from PST
+      let pstKey = piece.type;
+      if (piece.type === "k" && endgame) pstKey = "k_end";
+      const table = PST[pstKey];
+      if (table) {
+        value += piece.color === "w" ? table[mirrorIdx] : table[idx];
+      }
 
       score += piece.color === "w" ? value : -value;
     }
   }
 
-  // Mobility bonus
-  score += chessInstance.moves().length * 0.02 * (chessInstance.turn() === "w" ? 1 : -1);
+  // Mobility bonus (lighter weight)
+  const mobility = chess.moves().length;
+  score += mobility * 2 * (chess.turn() === "w" ? 1 : -1);
+
+  // Check bonus
+  if (chess.isCheck()) {
+    score += chess.turn() === "w" ? -30 : 30;
+  }
 
   return score;
 }
 
-function minimax(chessInstance, depth, alpha, beta, isMaximizing) {
-  if (depth === 0 || chessInstance.isGameOver()) {
-    return evaluateBoard(chessInstance);
+// Move ordering — check captures and checks first for better pruning
+function orderMoves(chess, moves) {
+  return moves.sort((a, b) => {
+    let scoreA = 0, scoreB = 0;
+
+    // Captures: MVV-LVA (Most Valuable Victim - Least Valuable Aggressor)
+    if (a.captured) scoreA += PIECE_VALUES[a.captured] * 10 - PIECE_VALUES[a.piece];
+    if (b.captured) scoreB += PIECE_VALUES[b.captured] * 10 - PIECE_VALUES[b.piece];
+
+    // Promotions
+    if (a.promotion) scoreA += 800;
+    if (b.promotion) scoreB += 800;
+
+    // Checks (try the move to see if it gives check)
+    if (a.san && a.san.includes("+")) scoreA += 50;
+    if (b.san && b.san.includes("+")) scoreB += 50;
+
+    return scoreB - scoreA;
+  });
+}
+
+function minimax(chess, depth, alpha, beta, isMaximizing) {
+  if (depth === 0 || chess.isGameOver()) {
+    return evaluateBoard(chess);
   }
 
-  const moves = chessInstance.moves();
+  const moves = chess.moves({ verbose: true });
+  orderMoves(chess, moves);
 
   if (isMaximizing) {
     let maxEval = -Infinity;
     for (const move of moves) {
-      chessInstance.move(move);
-      const eval_ = minimax(chessInstance, depth - 1, alpha, beta, false);
-      chessInstance.undo();
+      chess.move(move);
+      const eval_ = minimax(chess, depth - 1, alpha, beta, false);
+      chess.undo();
       maxEval = Math.max(maxEval, eval_);
       alpha = Math.max(alpha, eval_);
       if (beta <= alpha) break;
@@ -385,9 +484,9 @@ function minimax(chessInstance, depth, alpha, beta, isMaximizing) {
   } else {
     let minEval = Infinity;
     for (const move of moves) {
-      chessInstance.move(move);
-      const eval_ = minimax(chessInstance, depth - 1, alpha, beta, true);
-      chessInstance.undo();
+      chess.move(move);
+      const eval_ = minimax(chess, depth - 1, alpha, beta, true);
+      chess.undo();
       minEval = Math.min(minEval, eval_);
       beta = Math.min(beta, eval_);
       if (beta <= alpha) break;
@@ -400,33 +499,64 @@ function getAIMove(chessInstance, difficulty) {
   const moves = chessInstance.moves({ verbose: true });
   if (moves.length === 0) return null;
 
+  // --- EASY: depth 1, makes mistakes 30% of the time ---
   if (difficulty === "easy") {
-    // Random move with slight preference for captures
-    const captures = moves.filter((m) => m.captured);
-    if (captures.length > 0 && Math.random() < 0.4) {
-      return captures[Math.floor(Math.random() * captures.length)];
+    // 30% chance of random move (simulates blunders)
+    if (Math.random() < 0.3) {
+      return moves[Math.floor(Math.random() * moves.length)];
     }
-    return moves[Math.floor(Math.random() * moves.length)];
+    // Otherwise depth-1 search (shallow, basic)
+    const isMax = chessInstance.turn() === "w";
+    let bestMove = moves[0];
+    let bestEval = isMax ? -Infinity : Infinity;
+    const shuffled = [...moves].sort(() => Math.random() - 0.5);
+    for (const move of shuffled) {
+      chessInstance.move(move);
+      const eval_ = evaluateBoard(chessInstance);
+      chessInstance.undo();
+      if (isMax ? eval_ > bestEval : eval_ < bestEval) {
+        bestEval = eval_;
+        bestMove = move;
+      }
+    }
+    return bestMove;
   }
 
-  const depth = difficulty === "medium" ? 2 : 3;
+  // --- MEDIUM: depth 3 ---
+  // --- HARD: depth 4 ---
+  const depth = difficulty === "medium" ? 3 : 4;
   const isMaximizing = chessInstance.turn() === "w";
 
   let bestMove = moves[0];
   let bestEval = isMaximizing ? -Infinity : Infinity;
 
-  // Shuffle moves for variety
-  const shuffled = [...moves].sort(() => Math.random() - 0.5);
+  // Order moves for better pruning
+  orderMoves(chessInstance, moves);
 
-  for (const move of shuffled) {
+  // Add slight randomness to equally-evaluated moves for variety
+  const candidates = [];
+
+  for (const move of moves) {
     chessInstance.move(move);
     const eval_ = minimax(chessInstance, depth - 1, -Infinity, Infinity, !isMaximizing);
     chessInstance.undo();
+
+    candidates.push({ move, eval: eval_ });
 
     if (isMaximizing ? eval_ > bestEval : eval_ < bestEval) {
       bestEval = eval_;
       bestMove = move;
     }
+  }
+
+  // Among moves with similar evaluation (within 15 centipawns), pick randomly for variety
+  const threshold = 15;
+  const topMoves = candidates.filter(c =>
+    Math.abs(c.eval - bestEval) <= threshold
+  );
+
+  if (topMoves.length > 1) {
+    bestMove = topMoves[Math.floor(Math.random() * topMoves.length)].move;
   }
 
   return bestMove;
@@ -481,10 +611,10 @@ function stopTimer(roomCode) {
 }
 
 // ============================================================
-//  AI ENGINE — realistic thinking delays
+//  AI ENGINE — realistic human-like thinking delays
 // ============================================================
 
-// Make AI move with realistic delay (level-dependent)
+// Make AI move with realistic delay (scales with difficulty + move complexity)
 function scheduleAIMove(roomCode) {
   const room = rooms.get(roomCode);
   if (!room || !room.isAI || room.gameOver) return;
@@ -492,14 +622,31 @@ function scheduleAIMove(roomCode) {
   const aiColor = room.aiColor;
   if (room.chess.turn() !== aiColor) return;
 
-  // Realistic thinking time per difficulty
-  let delay;
+  const moveCount = room.moveHistory.length;
+  const legalMoves = room.chess.moves().length;
+
+  // Base delay per difficulty
+  let baseDelay;
   switch (room.aiDifficulty) {
-    case "easy": delay = 500 + Math.random() * 700; break;   // 0.5-1.2s
-    case "medium": delay = 1000 + Math.random() * 1500; break; // 1.0-2.5s
-    case "hard": delay = 1500 + Math.random() * 2000; break; // 1.5-3.5s
-    default: delay = 800 + Math.random() * 1200; break;
+    case "easy":   baseDelay = 400; break;
+    case "medium": baseDelay = 800; break;
+    case "hard":   baseDelay = 1200; break;
+    default:       baseDelay = 600; break;
   }
+
+  // Opening moves are faster (book knowledge), middlegame slower (thinking)
+  let phaseMultiplier;
+  if (moveCount < 10) phaseMultiplier = 0.6;       // Opening — fast
+  else if (moveCount < 30) phaseMultiplier = 1.2;   // Middlegame — slow
+  else phaseMultiplier = 0.8;                        // Endgame — moderate
+
+  // More legal moves = more to think about
+  const complexityBonus = Math.min(legalMoves * 15, 600);
+
+  // Random human-like variance ±30%
+  const variance = 0.7 + Math.random() * 0.6;
+
+  const delay = Math.round((baseDelay + complexityBonus) * phaseMultiplier * variance);
 
   setTimeout(() => {
     const currentRoom = rooms.get(roomCode);
@@ -612,8 +759,8 @@ io.on("connection", (uniquesocket) => {
       aiColor: null,
       aiDifficulty: null,
       // Timer system
-      timeControl: parseInt(data.timeControl) || 600,
-      gameTimer: parseInt(data.timeControl) || 600,
+      timeControl: Number(data.timeControl) >= 0 ? Number(data.timeControl) : 600,
+      gameTimer: Number(data.timeControl) >= 0 ? Number(data.timeControl) : 600,
       timerInterval: null,
       lastTickTime: null,
     };
@@ -644,7 +791,8 @@ io.on("connection", (uniquesocket) => {
 
     const aiColor = playerColor === "white" ? "black" : "white";
     const roomCode = generateRoomCode();
-    const tc = parseInt(data.timeControl) || 600;
+    const tc = Number(data.timeControl) >= 0 ? Number(data.timeControl) : 600;
+    console.log(`AI timeControl: raw=${data.timeControl}, parsed=${tc}`);
 
     const room = {
       code: roomCode,
