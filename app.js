@@ -621,6 +621,14 @@ function stopTimer(roomCode) {
   }
 }
 
+function safeStartTimer(roomCode) {
+  if (typeof startTimer === "function") {
+    startTimer(roomCode);
+  } else {
+    console.warn("Timer system unavailable, game continues without time limits.");
+  }
+}
+
 // ============================================================
 //  AI ENGINE — fast, non-blocking AI moves
 // ============================================================
@@ -826,7 +834,7 @@ io.on("connection", (uniquesocket) => {
     // Send initial timer and start game clock
     if (tc > 0) {
       io.to(roomCode).emit("timerUpdate", { time: room.gameTimer });
-      startTimer(roomCode);
+      safeStartTimer(roomCode);
     }
 
     io.to(roomCode).emit("chatSystem", `🤖 Playing against AI (${difficulty})`);
@@ -906,7 +914,7 @@ io.on("connection", (uniquesocket) => {
     // Start game clock when both players are in (PvP)
     if (room.players.white && room.players.black && room.timeControl > 0) {
       io.to(roomCode).emit("timerUpdate", { time: room.gameTimer });
-      startTimer(roomCode);
+      safeStartTimer(roomCode);
     }
   });
 
