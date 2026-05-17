@@ -702,6 +702,10 @@ body {
     0 12px 40px rgba(0,0,0,0.6),
     0 0 80px rgba(212,175,55,0.08);
   position: relative;
+  contain: layout style paint;
+  will-change: transform;
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
 }
 .chessboard::before {
   content: "";
@@ -1056,10 +1060,10 @@ html { font-size: clamp(14px, 1vw + 10px, 16px); }
   .sidebar { display: none; }
   .game-container { flex-direction: column; align-items: center; gap: 16px; }
 
-  /* Board */
-  .chessboard { width: 420px; height: 420px; }
-  .player-bar { max-width: 420px; }
-  .game-status-banner { max-width: 420px; }
+  /* Board — fill available width */
+  .chessboard { width: min(460px, calc(100vw - 60px)); height: min(460px, calc(100vw - 60px)); }
+  .player-bar { max-width: min(460px, calc(100vw - 60px)); }
+  .game-status-banner { max-width: min(460px, calc(100vw - 60px)); }
   .board-wrapper { padding: 28px 0 28px 28px; }
 
   /* Profile Modal */
@@ -1075,9 +1079,9 @@ html { font-size: clamp(14px, 1vw + 10px, 16px); }
 
 /* ---------- ≤ 768px  (large phones landscape / small tablets portrait) ---------- */
 @media (max-width: 768px) {
-  .chessboard { width: 380px; height: 380px; }
-  .player-bar { max-width: 380px; padding: 10px 14px; }
-  .game-status-banner { max-width: 380px; }
+  .chessboard { width: min(420px, calc(100vw - 40px)); height: min(420px, calc(100vw - 40px)); }
+  .player-bar { max-width: min(420px, calc(100vw - 40px)); padding: 10px 14px; }
+  .game-status-banner { max-width: min(420px, calc(100vw - 40px)); }
   .board-wrapper { padding: 24px 0 24px 24px; }
   .board-coords { font-size: 10px; }
   .board-coords-ranks { left: 5px; }
@@ -1119,9 +1123,9 @@ html { font-size: clamp(14px, 1vw + 10px, 16px); }
   .auth-form { padding: 20px 16px; }
   .logo-icon-large { font-size: 44px; }
 
-  .chessboard { width: 340px; height: 340px; }
-  .player-bar { max-width: 340px; padding: 8px 12px; }
-  .game-status-banner { max-width: 340px; font-size: 13px; }
+  .chessboard { width: min(380px, calc(100vw - 32px)); height: min(380px, calc(100vw - 32px)); }
+  .player-bar { max-width: min(380px, calc(100vw - 32px)); padding: 8px 12px; }
+  .game-status-banner { max-width: min(380px, calc(100vw - 32px)); font-size: 13px; }
   .board-wrapper { padding: 22px 0 22px 22px; }
   .board-coords-ranks { left: 4px; }
   .board-coords-files { bottom: 4px; left: 22px; }
@@ -1185,9 +1189,9 @@ html { font-size: clamp(14px, 1vw + 10px, 16px); }
   .form-group label { font-size: 12px; }
   .btn-primary { padding: 12px 18px; font-size: 14px; }
 
-  .chessboard { width: 300px; height: 300px; }
-  .player-bar { max-width: 300px; padding: 7px 10px; gap: 8px; }
-  .game-status-banner { max-width: 300px; padding: 8px 12px; font-size: 12px; }
+  .chessboard { width: min(360px, calc(100vw - 24px)); height: min(360px, calc(100vw - 24px)); }
+  .player-bar { max-width: min(360px, calc(100vw - 24px)); padding: 7px 10px; gap: 8px; }
+  .game-status-banner { max-width: min(360px, calc(100vw - 24px)); padding: 8px 12px; font-size: 12px; }
   .board-wrapper { padding: 20px 0 20px 20px; }
   .board-coords { font-size: 9px; }
   .board-coords-ranks { left: 3px; }
@@ -1266,9 +1270,9 @@ html { font-size: clamp(14px, 1vw + 10px, 16px); }
   .auth-title { font-size: 24px; }
   .auth-tagline { font-size: 13px; }
 
-  .chessboard { width: 270px; height: 270px; }
-  .player-bar { max-width: 270px; padding: 6px 8px; gap: 6px; }
-  .game-status-banner { max-width: 270px; }
+  .chessboard { width: min(340px, calc(100vw - 20px)); height: min(340px, calc(100vw - 20px)); }
+  .player-bar { max-width: min(340px, calc(100vw - 20px)); padding: 6px 8px; gap: 6px; }
+  .game-status-banner { max-width: min(340px, calc(100vw - 20px)); }
   .board-wrapper { padding: 18px 0 18px 18px; }
   .board-coords { font-size: 8px; }
   .board-coords-ranks { left: 2px; }
@@ -1306,9 +1310,9 @@ html { font-size: clamp(14px, 1vw + 10px, 16px); }
 
 /* ---------- ≤ 360px  (extra-tiny screens — iPhone SE, etc.) ---------- */
 @media (max-width: 360px) {
-  .chessboard { width: 250px; height: 250px; }
-  .player-bar { max-width: 250px; }
-  .game-status-banner { max-width: 250px; }
+  .chessboard { width: min(320px, calc(100vw - 16px)); height: min(320px, calc(100vw - 16px)); }
+  .player-bar { max-width: min(320px, calc(100vw - 16px)); }
+  .game-status-banner { max-width: min(320px, calc(100vw - 16px)); }
   .board-wrapper { padding: 16px 0 16px 16px; }
 
   .auth-container { padding: 12px 8px; }

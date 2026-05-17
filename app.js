@@ -5,8 +5,8 @@ const path = require("path");
 const http = require("http");
 const server = http.createServer(app);
 const io = socket(server, {
-  pingTimeout: 30000,
-  pingInterval: 15000,
+  pingTimeout: 10000,
+  pingInterval: 5000,
   maxHttpBufferSize: 1e6,
   cors: { origin: "*" },
 });
@@ -67,6 +67,7 @@ mongoose
 const rooms = new Map();
 const socketRooms = new Map();
 const socketUsers = new Map();
+const disconnectTimers = new Map(); // grace period timers for PvP disconnects
 
 // ============================================================
 //  EXPRESS CONFIG
@@ -495,6 +496,16 @@ function minimax(chess, depth, alpha, beta, isMaximizing) {
   }
 }
 
+// Async wrapper: runs AI search in small yielding chunks so the event loop stays free
+function getAIMoveAsync(chessInstance, difficulty) {
+  return new Promise((resolve) => {
+    setImmediate(() => {
+      const result = getAIMove(chessInstance, difficulty);
+      resolve(result);
+    });
+  });
+}
+
 function getAIMove(chessInstance, difficulty) {
   const moves = chessInstance.moves({ verbose: true });
   if (moves.length === 0) return null;
@@ -522,9 +533,9 @@ function getAIMove(chessInstance, difficulty) {
     return bestMove;
   }
 
-  // --- MEDIUM: depth 3 ---
-  // --- HARD: depth 4 ---
-  const depth = difficulty === "medium" ? 3 : 4;
+  // --- MEDIUM: depth 2 (was 3 — reduced for snappy play) ---
+  // --- HARD: depth 3 (was 4 — reduced for snappy play) ---
+  const depth = difficulty === "medium" ? 2 : 3;
   const isMaximizing = chessInstance.turn() === "w";
 
   let bestMove = moves[0];
@@ -611,10 +622,10 @@ function stopTimer(roomCode) {
 }
 
 // ============================================================
-//  AI ENGINE — realistic human-like thinking delays
+//  AI ENGINE — fast, non-blocking AI moves
 // ============================================================
 
-// Make AI move with realistic delay (scales with difficulty + move complexity)
+// Make AI move with minimal delay + async computation to never block the event loop
 function scheduleAIMove(roomCode) {
   const room = rooms.get(roomCode);
   if (!room || !room.isAI || room.gameOver) return;
@@ -622,48 +633,30 @@ function scheduleAIMove(roomCode) {
   const aiColor = room.aiColor;
   if (room.chess.turn() !== aiColor) return;
 
-  const moveCount = room.moveHistory.length;
-  const legalMoves = room.chess.moves().length;
+  // Short fixed delay so the move doesn't feel instant (more natural)
+  const delay = room.aiDifficulty === "easy" ? 200 : room.aiDifficulty === "medium" ? 350 : 500;
 
-  // Base delay per difficulty
-  let baseDelay;
-  switch (room.aiDifficulty) {
-    case "easy":   baseDelay = 400; break;
-    case "medium": baseDelay = 800; break;
-    case "hard":   baseDelay = 1200; break;
-    default:       baseDelay = 600; break;
-  }
-
-  // Opening moves are faster (book knowledge), middlegame slower (thinking)
-  let phaseMultiplier;
-  if (moveCount < 10) phaseMultiplier = 0.6;       // Opening — fast
-  else if (moveCount < 30) phaseMultiplier = 1.2;   // Middlegame — slow
-  else phaseMultiplier = 0.8;                        // Endgame — moderate
-
-  // More legal moves = more to think about
-  const complexityBonus = Math.min(legalMoves * 15, 600);
-
-  // Random human-like variance ±30%
-  const variance = 0.7 + Math.random() * 0.6;
-
-  const delay = Math.round((baseDelay + complexityBonus) * phaseMultiplier * variance);
-
-  setTimeout(() => {
+  setTimeout(async () => {
     const currentRoom = rooms.get(roomCode);
     if (!currentRoom || currentRoom.gameOver) return;
     if (currentRoom.chess.turn() !== aiColor) return;
 
-    const aiMove = getAIMove(currentRoom.chess, currentRoom.aiDifficulty);
+    // Use async wrapper so event loop stays free during computation
+    const aiMove = await getAIMoveAsync(currentRoom.chess, currentRoom.aiDifficulty);
     if (!aiMove) return;
 
+    // Double-check room is still valid after async
+    const recheck = rooms.get(roomCode);
+    if (!recheck || recheck.gameOver) return;
+
     const moveObj = { from: aiMove.from, to: aiMove.to, promotion: aiMove.promotion || "q" };
-    currentRoom.chess.move(moveObj);
-    currentRoom.moveHistory.push(moveObj);
+    recheck.chess.move(moveObj);
+    recheck.moveHistory.push(moveObj);
 
     io.to(roomCode).emit("move", moveObj);
 
     // Check game over after AI move
-    checkGameOver(currentRoom, roomCode);
+    checkGameOver(recheck, roomCode);
   }, delay);
 }
 
@@ -869,27 +862,46 @@ io.on("connection", (uniquesocket) => {
     socketUsers.set(uniquesocket.id, username);
     uniquesocket.join(roomCode);
 
-    // Assign to the open slot
-    if (!room.players.white) {
-      room.players.white = uniquesocket.id;
-      room.usernames.white = username;
-      uniquesocket.emit("playerRole", "w");
-      console.log(`${username} joined room ${roomCode} as White`);
-    } else if (!room.players.black) {
-      room.players.black = uniquesocket.id;
-      room.usernames.black = username;
-      uniquesocket.emit("playerRole", "b");
-      console.log(`${username} joined room ${roomCode} as Black`);
-    } else {
-      room.spectators.push(uniquesocket.id);
-      uniquesocket.emit("spectatorRole");
-      console.log(`${username} joined room ${roomCode} as Spectator`);
+    // Check if this is a reconnection (grace period active for this user)
+    let reconnected = false;
+    for (const [timerKey, info] of disconnectTimers) {
+      if (timerKey.startsWith(roomCode + "_") && info.username === username) {
+        // Cancel grace timer — player is back!
+        clearTimeout(info.timer);
+        disconnectTimers.delete(timerKey);
+        room.players[info.color] = uniquesocket.id;
+        uniquesocket.emit("playerRole", info.color === "white" ? "w" : "b");
+        io.to(roomCode).emit("opponentReconnected");
+        io.to(roomCode).emit("chatSystem", `✅ ${username} reconnected!`);
+        console.log(`${username} reconnected to room ${roomCode} as ${info.color}`);
+        reconnected = true;
+        break;
+      }
+    }
+
+    if (!reconnected) {
+      // Assign to the open slot
+      if (!room.players.white) {
+        room.players.white = uniquesocket.id;
+        room.usernames.white = username;
+        uniquesocket.emit("playerRole", "w");
+        console.log(`${username} joined room ${roomCode} as White`);
+      } else if (!room.players.black) {
+        room.players.black = uniquesocket.id;
+        room.usernames.black = username;
+        uniquesocket.emit("playerRole", "b");
+        console.log(`${username} joined room ${roomCode} as Black`);
+      } else {
+        room.spectators.push(uniquesocket.id);
+        uniquesocket.emit("spectatorRole");
+        console.log(`${username} joined room ${roomCode} as Spectator`);
+      }
+      io.to(roomCode).emit("chatSystem", `${username} joined the game`);
     }
 
     uniquesocket.emit("roomJoined", { roomCode, timeControl: room.timeControl });
     uniquesocket.emit("boardState", room.chess.fen());
     broadcastRoomState(roomCode);
-    io.to(roomCode).emit("chatSystem", `${username} joined the game`);
 
     // Start game clock when both players are in (PvP)
     if (room.players.white && room.players.black && room.timeControl > 0) {
@@ -1018,51 +1030,88 @@ io.on("connection", (uniquesocket) => {
       const room = rooms.get(roomCode);
       if (room) {
         let disconnectedColor = null;
-        const savedUsername = username; // save before clearing
+        const savedUsername = username;
+        const savedSocketId = uniquesocket.id;
 
         if (uniquesocket.id === room.players.white) {
           disconnectedColor = "white";
-          room.players.white = null;
         } else if (uniquesocket.id === room.players.black) {
           disconnectedColor = "black";
-          room.players.black = null;
         } else {
           room.spectators = room.spectators.filter((id) => id !== uniquesocket.id);
         }
 
         if (disconnectedColor && !room.gameOver) {
           const opponentColor = disconnectedColor === "white" ? "black" : "white";
-          if (room.players[opponentColor] || room.isAI) {
+
+          // AI games: end immediately
+          if (room.isAI) {
+            room.players[disconnectedColor] = null;
             room.gameOver = true;
             room.winner = opponentColor;
             room.gameOverReason = "disconnect";
-            // Keep username for recordGame so loss is tracked
             recordGame(room);
-            // Now clear the username and emit
             room.usernames[disconnectedColor] = null;
-            io.to(roomCode).emit("gameOver", {
-              reason: "disconnect",
-              winner: opponentColor,
-              winnerName: room.usernames[opponentColor] || "",
-              disconnectedName: savedUsername || "Opponent",
-            });
-            console.log(`${savedUsername} disconnected from room ${roomCode}. ${room.usernames[opponentColor]} wins!`);
+            stopTimer(roomCode);
+            console.log(`${savedUsername} disconnected from AI game ${roomCode}`);
           } else {
-            room.usernames[disconnectedColor] = null;
+            // PvP: 10-second grace period for reconnection
+            io.to(roomCode).emit("opponentDisconnected", {
+              disconnectedName: savedUsername || "Opponent",
+              gracePeriod: 10,
+            });
+            io.to(roomCode).emit("chatSystem", `⚠ ${savedUsername || "Opponent"} lost connection. Waiting 10s for reconnect…`);
+            console.log(`${savedUsername} disconnected from room ${roomCode}. 10s grace period…`);
+
+            // Store grace timer
+            const timerKey = `${roomCode}_${disconnectedColor}`;
+            const timer = setTimeout(() => {
+              disconnectTimers.delete(timerKey);
+              const currentRoom = rooms.get(roomCode);
+              if (!currentRoom || currentRoom.gameOver) return;
+
+              // Check if they reconnected
+              if (currentRoom.players[disconnectedColor]) return;
+
+              // Grace period expired — opponent wins
+              currentRoom.players[disconnectedColor] = null;
+              currentRoom.gameOver = true;
+              currentRoom.winner = opponentColor;
+              currentRoom.gameOverReason = "disconnect";
+              recordGame(currentRoom);
+              currentRoom.usernames[disconnectedColor] = null;
+              stopTimer(roomCode);
+              io.to(roomCode).emit("gameOver", {
+                reason: "disconnect",
+                winner: opponentColor,
+                winnerName: currentRoom.usernames[opponentColor] || "",
+                disconnectedName: savedUsername || "Opponent",
+              });
+              io.to(roomCode).emit("opponentReconnected"); // clear any UI
+              console.log(`Grace expired: ${savedUsername} did not reconnect. ${currentRoom.usernames[opponentColor]} wins!`);
+
+              broadcastRoomState(roomCode);
+              if (!currentRoom.players.white && !currentRoom.players.black && currentRoom.spectators.length === 0) {
+                rooms.delete(roomCode);
+              }
+            }, 10000);
+            disconnectTimers.set(timerKey, { timer, socketId: savedSocketId, color: disconnectedColor, username: savedUsername });
           }
         } else if (disconnectedColor) {
+          room.players[disconnectedColor] = null;
           room.usernames[disconnectedColor] = null;
         }
 
-        if (disconnectedColor) {
-          io.to(roomCode).emit("chatSystem", `${savedUsername || "A player"} disconnected`);
-        }
-
-        broadcastRoomState(roomCode);
-
-        if (!room.players.white && !room.players.black && room.spectators.length === 0) {
-          rooms.delete(roomCode);
-          console.log(`Room ${roomCode} deleted (empty)`);
+        if (disconnectedColor && !disconnectTimers.has(`${roomCode}_${disconnectedColor}`)) {
+          // Only broadcast if no grace period is active
+          if (disconnectedColor) {
+            io.to(roomCode).emit("chatSystem", `${savedUsername || "A player"} disconnected`);
+          }
+          broadcastRoomState(roomCode);
+          if (!room.players.white && !room.players.black && room.spectators.length === 0) {
+            rooms.delete(roomCode);
+            console.log(`Room ${roomCode} deleted (empty)`);
+          }
         }
       }
 
@@ -1100,6 +1149,16 @@ io.on("connection", (uniquesocket) => {
         // IMPORTANT: Leave the room BEFORE emitting gameOver
         // so the leaving player does NOT receive the win/loss modal
         uniquesocket.leave(roomCode);
+
+        // Cancel any active disconnect grace timer for this player
+        if (disconnectedColor) {
+          const timerKey = `${roomCode}_${disconnectedColor}`;
+          const existing = disconnectTimers.get(timerKey);
+          if (existing) {
+            clearTimeout(existing.timer);
+            disconnectTimers.delete(timerKey);
+          }
+        }
 
         if (disconnectedColor && !room.gameOver) {
           const opponentColor = disconnectedColor === "white" ? "black" : "white";

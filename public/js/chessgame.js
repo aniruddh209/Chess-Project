@@ -4,7 +4,13 @@ import { Chess } from "/vendor/chess.js";
 //  SOCKET & CHESS ENGINE
 // ============================================================
 
-const socket = io();
+const socket = io({
+  reconnection: true,
+  reconnectionAttempts: 20,
+  reconnectionDelay: 500,
+  reconnectionDelayMax: 3000,
+  timeout: 8000,
+});
 const chess = new Chess();
 
 // ============================================================
@@ -393,11 +399,57 @@ btnBackLobby.addEventListener("click", () => {
 socket.on("connect", () => {
   if (statusDot) statusDot.classList.add("connected");
   updateConnectionText("Connected");
+  // Auto-rejoin room on reconnect
+  if (currentRoomCode && currentUsername) {
+    socket.emit("joinRoom", { roomCode: currentRoomCode, username: currentUsername });
+  }
 });
 
 socket.on("disconnect", () => {
   if (statusDot) statusDot.classList.remove("connected");
-  updateConnectionText("Disconnected");
+  updateConnectionText("Reconnecting…");
+});
+
+socket.on("reconnect_attempt", (attempt) => {
+  updateConnectionText(`Reconnecting (${attempt})…`);
+});
+
+socket.on("reconnect_failed", () => {
+  updateConnectionText("Connection lost");
+});
+
+// Opponent disconnect/reconnect grace period UI
+let disconnectBannerTimeout = null;
+
+socket.on("opponentDisconnected", (data) => {
+  if (gameStatusBanner && statusText) {
+    statusText.textContent = `⚠ ${data.disconnectedName} lost connection. Waiting ${data.gracePeriod}s…`;
+    gameStatusBanner.className = "game-status-banner check";
+    gameStatusBanner.style.display = "block";
+    // Countdown
+    let remaining = data.gracePeriod;
+    if (disconnectBannerTimeout) clearInterval(disconnectBannerTimeout);
+    disconnectBannerTimeout = setInterval(() => {
+      remaining--;
+      if (remaining <= 0) {
+        clearInterval(disconnectBannerTimeout);
+        disconnectBannerTimeout = null;
+        return;
+      }
+      if (statusText) statusText.textContent = `⚠ ${data.disconnectedName} lost connection. Waiting ${remaining}s…`;
+    }, 1000);
+  }
+});
+
+socket.on("opponentReconnected", () => {
+  if (disconnectBannerTimeout) {
+    clearInterval(disconnectBannerTimeout);
+    disconnectBannerTimeout = null;
+  }
+  if (gameStatusBanner) {
+    gameStatusBanner.style.display = "none";
+  }
+  updateGameStatus();
 });
 
 function updateConnectionText(text) {
@@ -594,18 +646,21 @@ function animateMove(fromRow, fromCol, toRow, toCol, callback) {
   setTimeout(done, 220); // tight fallback
 }
 
-const renderBoard = () => {
-  const board = chess.board();
-  boardElement.innerHTML = "";
-  board.forEach((row, rowindex) => {
-    row.forEach((square, squareindex) => {
-      const squareElement = document.createElement("div");
-      squareElement.classList.add(
-        "square",
-        (rowindex + squareindex) % 2 == 0 ? "light" : "dark",
-      );
-      squareElement.dataset.row = rowindex;
-      squareElement.dataset.col = squareindex;
+const renderBoard = (() => {
+  let renderQueued = false;
+  const doRender = () => {
+    renderQueued = false;
+    const board = chess.board();
+    const fragment = document.createDocumentFragment();
+    board.forEach((row, rowindex) => {
+      row.forEach((square, squareindex) => {
+        const squareElement = document.createElement("div");
+        squareElement.classList.add(
+          "square",
+          (rowindex + squareindex) % 2 == 0 ? "light" : "dark",
+        );
+        squareElement.dataset.row = rowindex;
+        squareElement.dataset.col = squareindex;
 
       // Last move highlighting
       if (lastMove) {
@@ -736,9 +791,11 @@ const renderBoard = () => {
           handleMove(sourceSquare, targetSource);
         }
       });
-      boardElement.appendChild(squareElement);
+      fragment.appendChild(squareElement);
     });
   });
+  boardElement.innerHTML = "";
+  boardElement.appendChild(fragment);
   if (PlayerRole === "b") {
     boardElement.classList.add("flipped");
   } else {
@@ -752,7 +809,14 @@ const renderBoard = () => {
   // Re-apply saved board theme
   const currentTheme = localStorage.getItem("chess-board-theme") || "classic";
   applyBoardTheme(currentTheme);
-};
+  };
+  // Debounced render: coalesce multiple rapid calls into one paint
+  return () => {
+    if (renderQueued) return;
+    renderQueued = true;
+    requestAnimationFrame(doRender);
+  };
+})();
 
 // --- Handle Move ---
 const handleMove = (source, target) => {
