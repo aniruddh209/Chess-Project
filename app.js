@@ -614,7 +614,7 @@ function startRoomTimer(roomCode) {
 
 // Backward-compatible alias for existing timer start calls.
 function startTimer(roomCode) {
-  startRoomTimer(roomCode);
+  return startRoomTimer(roomCode);
 }
 
 function stopTimer(roomCode) {
