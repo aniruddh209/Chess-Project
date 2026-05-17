@@ -612,25 +612,12 @@ function startTimerImpl(roomCode) {
   }, 1000);
 }
 
-function startTimer(roomCode) {
-  startTimerImpl(roomCode);
-}
-
 function stopTimer(roomCode) {
   const room = rooms.get(roomCode);
   if (!room) return;
   if (room.timerInterval) {
     clearInterval(room.timerInterval);
     room.timerInterval = null;
-  }
-}
-
-function triggerTimerStart(roomCode) {
-  if (typeof startTimer === "function") {
-    startTimer(roomCode);
-  } else {
-    console.warn(`startTimer is unavailable for room ${roomCode}`);
-    startTimerImpl(roomCode);
   }
 }
 
@@ -839,7 +826,7 @@ io.on("connection", (uniquesocket) => {
     // Send initial timer and start game clock
     if (tc > 0) {
       io.to(roomCode).emit("timerUpdate", { time: room.gameTimer });
-      triggerTimerStart(roomCode);
+      startTimerImpl(roomCode);
     }
 
     io.to(roomCode).emit("chatSystem", `🤖 Playing against AI (${difficulty})`);
@@ -919,7 +906,7 @@ io.on("connection", (uniquesocket) => {
     // Start game clock when both players are in (PvP)
     if (room.players.white && room.players.black && room.timeControl > 0) {
       io.to(roomCode).emit("timerUpdate", { time: room.gameTimer });
-      triggerTimerStart(roomCode);
+      startTimerImpl(roomCode);
     }
   });
 
