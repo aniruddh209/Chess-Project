@@ -20,9 +20,14 @@ const chess = new Chess();
 let PlayerRole = null;
 let currentUsername = null;
 let currentRoomCode = null;
+// Flag when playing against AI (client-side UX tweaks)
+let isAIGame = false;
+let aiColor = null; // 'w' or 'b' representing the AI side
+let aiThinkingTimeout = null;
 
 // --- Piece Image URL (Lichess cburnett SVG set) ---
-const PIECE_CDN = "https://cdn.jsdelivr.net/gh/lichess-org/lila@master/public/piece/cburnett";
+const PIECE_CDN =
+  "https://cdn.jsdelivr.net/gh/lichess-org/lila@master/public/piece/cburnett";
 
 const getPieceImageUrl = (piece) => {
   const colorChar = piece.color === "w" ? "w" : "b";
@@ -33,7 +38,9 @@ const getPieceImageUrl = (piece) => {
 const getPieceUnicode = (piece) => {
   const whitePieces = { p: "♙", r: "♖", n: "♘", b: "♗", q: "♕", k: "♔" };
   const blackPieces = { p: "♟", r: "♜", n: "♞", b: "♝", q: "♛", k: "♚" };
-  return piece.color === "w" ? whitePieces[piece.type] : blackPieces[piece.type];
+  return piece.color === "w"
+    ? whitePieces[piece.type]
+    : blackPieces[piece.type];
 };
 
 // ============================================================
@@ -82,7 +89,9 @@ const btnBackLobby = document.getElementById("btn-back-lobby");
 // Game elements
 const boardElement = document.querySelector(".chessboard");
 const connectionStatus = document.getElementById("connection-status");
-const statusDot = connectionStatus ? connectionStatus.querySelector(".status-dot") : null;
+const statusDot = connectionStatus
+  ? connectionStatus.querySelector(".status-dot")
+  : null;
 const gameStatusBanner = document.getElementById("game-status");
 const statusText = document.getElementById("status-text");
 const moveListEl = document.getElementById("move-list");
@@ -232,11 +241,21 @@ btnSignup.addEventListener("click", async () => {
 });
 
 // Enter key support for auth forms
-loginUsername.addEventListener("keydown", (e) => { if (e.key === "Enter") btnLogin.click(); });
-loginPassword.addEventListener("keydown", (e) => { if (e.key === "Enter") btnLogin.click(); });
-signupUsername.addEventListener("keydown", (e) => { if (e.key === "Enter") btnSignup.click(); });
-signupPassword.addEventListener("keydown", (e) => { if (e.key === "Enter") btnSignup.click(); });
-signupConfirm.addEventListener("keydown", (e) => { if (e.key === "Enter") btnSignup.click(); });
+loginUsername.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") btnLogin.click();
+});
+loginPassword.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") btnLogin.click();
+});
+signupUsername.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") btnSignup.click();
+});
+signupPassword.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") btnSignup.click();
+});
+signupConfirm.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") btnSignup.click();
+});
 
 // ============================================================
 //  LOBBY LOGIC
@@ -250,14 +269,73 @@ function goToLobby() {
   clearErrors();
   // Reset game clock
   const clockEl = document.getElementById("game-clock");
-  if (clockEl) { clockEl.style.display = "none"; clockEl.classList.remove("timer-low"); }
+  if (clockEl) {
+    clockEl.style.display = "none";
+    clockEl.classList.remove("timer-low");
+  }
   const timerEl = document.getElementById("game-timer");
   if (timerEl) timerEl.textContent = "--:--";
 }
 
+// Toggle chat UI visibility (used to hide chat for AI-only games)
+function setChatVisibility(visible) {
+  const chatEls = [
+    chatMessagesEl,
+    chatPlaceholder,
+    chatInput,
+    btnSendChat,
+    chatToggleBtn,
+    chatOverlay,
+    chatMessagesMobile,
+    chatInputMobile,
+    btnSendChatMobile,
+    btnCloseChat,
+  ];
+  chatEls.forEach((el) => {
+    try {
+      if (!el) return;
+      el.style.display = visible ? "" : "none";
+    } catch (e) {
+      // ignore
+    }
+  });
+}
+
+// Lightweight AI thinking indicator helpers
+function attachAIThinking() {
+  if (!isAIGame) return;
+  // which side is AI visually (top or bottom)? compute from PlayerRole mapping used elsewhere
+  const isBlack = PlayerRole === "b";
+  const topColor = isBlack ? "w" : "b";
+  const bottomColor = isBlack ? "b" : "w";
+
+  const isTopAI = aiColor === topColor;
+  const statusEl = isTopAI
+    ? playerTopEl.querySelector(".player-status")
+    : playerBottomEl.querySelector(".player-status");
+  if (!statusEl) return;
+  // avoid duplicate
+  if (statusEl.querySelector(".ai-spinner")) return;
+  statusEl.textContent = "Thinking…";
+  const span = document.createElement("span");
+  span.className = "ai-spinner";
+  span.textContent = " ⏳";
+  statusEl.appendChild(span);
+}
+
+function clearAIThinking() {
+  if (aiThinkingTimeout) {
+    clearTimeout(aiThinkingTimeout);
+    aiThinkingTimeout = null;
+  }
+  document.querySelectorAll(".ai-spinner").forEach((s) => s.remove());
+}
+
 // Logout — clear server cookie + client state
 btnLogout.addEventListener("click", async () => {
-  try { await fetch("/api/logout", { method: "POST" }); } catch (e) { }
+  try {
+    await fetch("/api/logout", { method: "POST" });
+  } catch (e) {}
   currentUsername = null;
   loginUsername.value = "";
   loginPassword.value = "";
@@ -271,8 +349,11 @@ btnLogout.addEventListener("click", async () => {
 
 // Create Room (with color selection)
 btnCreateRoom.addEventListener("click", () => {
-  const color = document.querySelector('input[name="create-color"]:checked')?.value || "white";
-  const timeControl = document.querySelector('input[name="create-time"]:checked')?.value || "600";
+  const color =
+    document.querySelector('input[name="create-color"]:checked')?.value ||
+    "white";
+  const timeControl =
+    document.querySelector('input[name="create-time"]:checked')?.value || "600";
   btnCreateRoom.disabled = true;
   btnCreateRoom.textContent = "Creating...";
   socket.emit("createRoom", { username: currentUsername, color, timeControl });
@@ -281,12 +362,30 @@ btnCreateRoom.addEventListener("click", () => {
 // Play vs AI
 if (btnPlayAI) {
   btnPlayAI.addEventListener("click", () => {
-    const difficulty = document.querySelector('input[name="ai-diff"]:checked')?.value || "medium";
-    const color = document.querySelector('input[name="ai-color"]:checked')?.value || "white";
-    const timeControl = document.querySelector('input[name="ai-time"]:checked')?.value || "600";
+    const difficulty =
+      document.querySelector('input[name="ai-diff"]:checked')?.value ||
+      "medium";
+    const color =
+      document.querySelector('input[name="ai-color"]:checked')?.value ||
+      "white";
+    const timeControl =
+      document.querySelector('input[name="ai-time"]:checked')?.value || "600";
+    // Mark this as an AI game locally so we can adjust the UI (hide chat, show thinking)
+    isAIGame = true;
+    aiColor = color === "white" ? "b" : "w";
+
     btnPlayAI.disabled = true;
     btnPlayAI.textContent = "Starting...";
-    socket.emit("playAI", { username: currentUsername, difficulty, color, timeControl });
+    // Hide chat and typing UI for smoother AI-only experience
+    setChatVisibility(false);
+
+    socket.emit("playAI", {
+      username: currentUsername,
+      difficulty,
+      color,
+      timeControl,
+    });
+    // Safety: restore button state after a short grace period if server doesn't respond
     setTimeout(() => {
       btnPlayAI.disabled = false;
       btnPlayAI.textContent = "Play AI";
@@ -304,8 +403,10 @@ if (btnProfile) {
       if (!res.ok) return;
 
       document.getElementById("profile-name").textContent = data.username;
-      document.getElementById("profile-since").textContent = `Member since ${new Date(data.memberSince).toLocaleDateString("en-US", { month: "long", year: "numeric" })}`;
-      document.getElementById("stat-games").textContent = data.stats.gamesPlayed;
+      document.getElementById("profile-since").textContent =
+        `Member since ${new Date(data.memberSince).toLocaleDateString("en-US", { month: "long", year: "numeric" })}`;
+      document.getElementById("stat-games").textContent =
+        data.stats.gamesPlayed;
       document.getElementById("stat-wins").textContent = data.stats.wins;
       document.getElementById("stat-losses").textContent = data.stats.losses;
       document.getElementById("stat-draws").textContent = data.stats.draws;
@@ -318,22 +419,26 @@ if (btnProfile) {
       // Recent games
       const recentEl = document.getElementById("recent-games");
       if (data.recentGames.length === 0) {
-        recentEl.innerHTML = '<p style="color:var(--text-muted);font-size:13px;text-align:center;">No games yet</p>';
+        recentEl.innerHTML =
+          '<p style="color:var(--text-muted);font-size:13px;text-align:center;">No games yet</p>';
       } else {
-        recentEl.innerHTML = data.recentGames.map((g) => {
-          const isWin = g.result === (g.myColor === "white" ? "white_win" : "black_win");
-          const isDraw = g.result === "draw";
-          const resultClass = isDraw ? "draw" : isWin ? "win" : "loss";
-          const resultText = isDraw ? "Draw" : isWin ? "Win" : "Loss";
-          const mins = Math.floor(g.duration / 60);
-          const secs = g.duration % 60;
-          const duration = `${mins}m ${secs}s`;
-          return `<div class="game-record ${resultClass}">
+        recentEl.innerHTML = data.recentGames
+          .map((g) => {
+            const isWin =
+              g.result === (g.myColor === "white" ? "white_win" : "black_win");
+            const isDraw = g.result === "draw";
+            const resultClass = isDraw ? "draw" : isWin ? "win" : "loss";
+            const resultText = isDraw ? "Draw" : isWin ? "Win" : "Loss";
+            const mins = Math.floor(g.duration / 60);
+            const secs = g.duration % 60;
+            const duration = `${mins}m ${secs}s`;
+            return `<div class="game-record ${resultClass}">
             <span class="game-result-badge">${resultText}</span>
-            <span class="game-opponent">vs ${g.opponent}${g.isAI ? ' 🤖' : ''}</span>
+            <span class="game-opponent">vs ${g.opponent}${g.isAI ? " 🤖" : ""}</span>
             <span class="game-meta">${g.totalMoves} moves · ${duration}</span>
           </div>`;
-        }).join("");
+          })
+          .join("");
       }
 
       profileModal.style.display = "flex";
@@ -381,7 +486,9 @@ btnCopyCode.addEventListener("click", () => {
   if (currentRoomCode) {
     navigator.clipboard.writeText(currentRoomCode).then(() => {
       copyFeedback.style.display = "block";
-      setTimeout(() => { copyFeedback.style.display = "none"; }, 2000);
+      setTimeout(() => {
+        copyFeedback.style.display = "none";
+      }, 2000);
     });
   }
 });
@@ -401,7 +508,10 @@ socket.on("connect", () => {
   updateConnectionText("Connected");
   // Auto-rejoin room on reconnect
   if (currentRoomCode && currentUsername) {
-    socket.emit("joinRoom", { roomCode: currentRoomCode, username: currentUsername });
+    socket.emit("joinRoom", {
+      roomCode: currentRoomCode,
+      username: currentUsername,
+    });
   }
 });
 
@@ -436,7 +546,8 @@ socket.on("opponentDisconnected", (data) => {
         disconnectBannerTimeout = null;
         return;
       }
-      if (statusText) statusText.textContent = `⚠ ${data.disconnectedName} lost connection. Waiting ${remaining}s…`;
+      if (statusText)
+        statusText.textContent = `⚠ ${data.disconnectedName} lost connection. Waiting ${remaining}s…`;
     }, 1000);
   }
 });
@@ -529,9 +640,15 @@ function playCheckSound() {
     osc.connect(gain);
     gain.connect(audioCtx.destination);
     osc.type = "square";
-    osc.frequency.setValueAtTime(i === 0 ? 880 : 660, audioCtx.currentTime + i * 0.1);
+    osc.frequency.setValueAtTime(
+      i === 0 ? 880 : 660,
+      audioCtx.currentTime + i * 0.1,
+    );
     gain.gain.setValueAtTime(0.08, audioCtx.currentTime + i * 0.1);
-    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + i * 0.1 + 0.12);
+    gain.gain.exponentialRampToValueAtTime(
+      0.001,
+      audioCtx.currentTime + i * 0.1 + 0.12,
+    );
     osc.start(audioCtx.currentTime + i * 0.1);
     osc.stop(audioCtx.currentTime + i * 0.1 + 0.12);
   }
@@ -548,7 +665,10 @@ function playGameOverSound() {
     osc.type = "sine";
     osc.frequency.setValueAtTime(freq, audioCtx.currentTime + i * 0.15);
     gain.gain.setValueAtTime(0.12, audioCtx.currentTime + i * 0.15);
-    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + i * 0.15 + 0.3);
+    gain.gain.exponentialRampToValueAtTime(
+      0.001,
+      audioCtx.currentTime + i * 0.15 + 0.3,
+    );
     osc.start(audioCtx.currentTime + i * 0.15);
     osc.stop(audioCtx.currentTime + i * 0.15 + 0.3);
   });
@@ -571,9 +691,13 @@ function algebraicToRowCol(sq) {
 // Clear selection
 function clearSelection() {
   selectedSquare = null;
-  document.querySelectorAll(".square.selected").forEach((el) => el.classList.remove("selected"));
+  document
+    .querySelectorAll(".square.selected")
+    .forEach((el) => el.classList.remove("selected"));
   document.querySelectorAll(".legal-dot").forEach((el) => el.remove());
-  document.querySelectorAll(".legal-capture").forEach((el) => el.classList.remove("legal-capture"));
+  document
+    .querySelectorAll(".legal-capture")
+    .forEach((el) => el.classList.remove("legal-capture"));
 }
 
 // Show legal move indicators
@@ -582,7 +706,7 @@ function showLegalMoves(row, col) {
   moves.forEach((move) => {
     const target = algebraicToRowCol(move.to);
     const targetSquare = boardElement.querySelector(
-      `.square[data-row="${target.row}"][data-col="${target.col}"]`
+      `.square[data-row="${target.row}"][data-col="${target.col}"]`,
     );
     if (!targetSquare) return;
 
@@ -601,10 +725,10 @@ function showLegalMoves(row, col) {
 // Animate piece from source to target, then re-render
 function animateMove(fromRow, fromCol, toRow, toCol, callback) {
   const fromSquare = boardElement.querySelector(
-    `.square[data-row="${fromRow}"][data-col="${fromCol}"]`
+    `.square[data-row="${fromRow}"][data-col="${fromCol}"]`,
   );
   const toSquare = boardElement.querySelector(
-    `.square[data-row="${toRow}"][data-col="${toCol}"]`
+    `.square[data-row="${toRow}"][data-col="${toCol}"]`,
   );
 
   if (!fromSquare || !toSquare) {
@@ -662,153 +786,160 @@ const renderBoard = (() => {
         squareElement.dataset.row = rowindex;
         squareElement.dataset.col = squareindex;
 
-      // Last move highlighting
-      if (lastMove) {
-        if (
-          (rowindex === lastMove.from.row && squareindex === lastMove.from.col) ||
-          (rowindex === lastMove.to.row && squareindex === lastMove.to.col)
-        ) {
-          squareElement.classList.add("highlight");
-        }
-      }
-
-      // King in check / checkmate highlighting
-      if (square && square.type === "k") {
-        if (chess.isCheckmate() && chess.turn() === square.color) {
-          squareElement.classList.add("king-checkmate");
-        } else if (chess.isCheck() && chess.turn() === square.color) {
-          squareElement.classList.add("king-in-check");
-        }
-      }
-
-      if (square) {
-        const pieceElement = document.createElement("div");
-        pieceElement.classList.add(
-          "piece",
-          square.color == "w" ? "white" : "black",
-        );
-
-        const img = document.createElement("img");
-        img.src = getPieceImageUrl(square);
-        img.alt = getPieceUnicode(square);
-        img.classList.add("piece-img");
-        img.draggable = false;
-        pieceElement.appendChild(img);
-
-        pieceElement.draggable = PlayerRole === square.color;
-
-        if (pieceElement.draggable) {
-          pieceElement.classList.add("draggable");
+        // Last move highlighting
+        if (lastMove) {
+          if (
+            (rowindex === lastMove.from.row &&
+              squareindex === lastMove.from.col) ||
+            (rowindex === lastMove.to.row && squareindex === lastMove.to.col)
+          ) {
+            squareElement.classList.add("highlight");
+          }
         }
 
-        // Drag events
-        pieceElement.addEventListener("dragstart", (e) => {
+        // King in check / checkmate highlighting
+        if (square && square.type === "k") {
+          if (chess.isCheckmate() && chess.turn() === square.color) {
+            squareElement.classList.add("king-checkmate");
+          } else if (chess.isCheck() && chess.turn() === square.color) {
+            squareElement.classList.add("king-in-check");
+          }
+        }
+
+        if (square) {
+          const pieceElement = document.createElement("div");
+          pieceElement.classList.add(
+            "piece",
+            square.color == "w" ? "white" : "black",
+          );
+
+          const img = document.createElement("img");
+          img.src = getPieceImageUrl(square);
+          img.alt = getPieceUnicode(square);
+          img.classList.add("piece-img");
+          img.draggable = false;
+          pieceElement.appendChild(img);
+
+          pieceElement.draggable = PlayerRole === square.color;
+
           if (pieceElement.draggable) {
-            clearSelection();
-            draggedPiece = pieceElement;
-            sourceSquare = { row: rowindex, col: squareindex };
-            e.dataTransfer.setData("text/plain", "");
-            if (img.complete) {
-              e.dataTransfer.setDragImage(img, img.width / 2, img.height / 2);
+            pieceElement.classList.add("draggable");
+          }
+
+          // Drag events
+          pieceElement.addEventListener("dragstart", (e) => {
+            if (pieceElement.draggable) {
+              clearSelection();
+              draggedPiece = pieceElement;
+              sourceSquare = { row: rowindex, col: squareindex };
+              e.dataTransfer.setData("text/plain", "");
+              if (img.complete) {
+                e.dataTransfer.setDragImage(img, img.width / 2, img.height / 2);
+              }
+              setTimeout(() => {
+                pieceElement.classList.add("dragging");
+              }, 0);
             }
-            setTimeout(() => {
-              pieceElement.classList.add("dragging");
-            }, 0);
-          }
-        });
-        pieceElement.addEventListener("dragend", () => {
-          if (draggedPiece) {
-            draggedPiece.classList.remove("dragging");
-          }
-          draggedPiece = null;
-          sourceSquare = null;
-        });
-        squareElement.appendChild(pieceElement);
-      }
+          });
+          pieceElement.addEventListener("dragend", () => {
+            if (draggedPiece) {
+              draggedPiece.classList.remove("dragging");
+            }
+            draggedPiece = null;
+            sourceSquare = null;
+          });
+          squareElement.appendChild(pieceElement);
+        }
 
-      // Click-to-move
-      squareElement.addEventListener("click", () => {
-        if (!PlayerRole || PlayerRole !== chess.turn()) return;
+        // Click-to-move
+        squareElement.addEventListener("click", () => {
+          if (!PlayerRole || PlayerRole !== chess.turn()) return;
 
-        if (selectedSquare) {
-          // Second click — try to move
-          const targetRow = rowindex;
-          const targetCol = squareindex;
+          if (selectedSquare) {
+            // Second click — try to move
+            const targetRow = rowindex;
+            const targetCol = squareindex;
 
-          if (targetRow === selectedSquare.row && targetCol === selectedSquare.col) {
-            // Clicked same square — deselect
-            clearSelection();
-            return;
-          }
+            if (
+              targetRow === selectedSquare.row &&
+              targetCol === selectedSquare.col
+            ) {
+              // Clicked same square — deselect
+              clearSelection();
+              return;
+            }
 
-          // Check if this is a legal move
-          const moves = getLegalMovesFrom(selectedSquare.row, selectedSquare.col);
-          const targetAlg = `${String.fromCharCode(97 + targetCol)}${8 - targetRow}`;
-          const isLegal = moves.some((m) => m.to === targetAlg);
+            // Check if this is a legal move
+            const moves = getLegalMovesFrom(
+              selectedSquare.row,
+              selectedSquare.col,
+            );
+            const targetAlg = `${String.fromCharCode(97 + targetCol)}${8 - targetRow}`;
+            const isLegal = moves.some((m) => m.to === targetAlg);
 
-          if (isLegal) {
-            handleMove(selectedSquare, { row: targetRow, col: targetCol });
-            clearSelection();
-          } else if (square && square.color === PlayerRole) {
-            // Clicked own piece — select it instead
-            clearSelection();
-            selectedSquare = { row: rowindex, col: squareindex };
-            squareElement.classList.add("selected");
-            showLegalMoves(rowindex, squareindex);
+            if (isLegal) {
+              handleMove(selectedSquare, { row: targetRow, col: targetCol });
+              clearSelection();
+            } else if (square && square.color === PlayerRole) {
+              // Clicked own piece — select it instead
+              clearSelection();
+              selectedSquare = { row: rowindex, col: squareindex };
+              squareElement.classList.add("selected");
+              showLegalMoves(rowindex, squareindex);
+            } else {
+              clearSelection();
+            }
           } else {
-            clearSelection();
+            // First click — select piece
+            if (square && square.color === PlayerRole) {
+              clearSelection();
+              selectedSquare = { row: rowindex, col: squareindex };
+              squareElement.classList.add("selected");
+              showLegalMoves(rowindex, squareindex);
+            }
           }
-        } else {
-          // First click — select piece
-          if (square && square.color === PlayerRole) {
-            clearSelection();
-            selectedSquare = { row: rowindex, col: squareindex };
-            squareElement.classList.add("selected");
-            showLegalMoves(rowindex, squareindex);
+        });
+
+        // Drag events on squares
+        squareElement.addEventListener("dragover", (e) => {
+          e.preventDefault();
+          squareElement.classList.add("drop-target");
+        });
+
+        squareElement.addEventListener("dragleave", () => {
+          squareElement.classList.remove("drop-target");
+        });
+
+        squareElement.addEventListener("drop", (e) => {
+          e.preventDefault();
+          squareElement.classList.remove("drop-target");
+          clearSelection();
+          if (draggedPiece) {
+            const targetSource = {
+              row: parseInt(squareElement.dataset.row),
+              col: parseInt(squareElement.dataset.col),
+            };
+            handleMove(sourceSquare, targetSource);
           }
-        }
+        });
+        fragment.appendChild(squareElement);
       });
-
-      // Drag events on squares
-      squareElement.addEventListener("dragover", (e) => {
-        e.preventDefault();
-        squareElement.classList.add("drop-target");
-      });
-
-      squareElement.addEventListener("dragleave", () => {
-        squareElement.classList.remove("drop-target");
-      });
-
-      squareElement.addEventListener("drop", (e) => {
-        e.preventDefault();
-        squareElement.classList.remove("drop-target");
-        clearSelection();
-        if (draggedPiece) {
-          const targetSource = {
-            row: parseInt(squareElement.dataset.row),
-            col: parseInt(squareElement.dataset.col),
-          };
-          handleMove(sourceSquare, targetSource);
-        }
-      });
-      fragment.appendChild(squareElement);
     });
-  });
-  boardElement.innerHTML = "";
-  boardElement.appendChild(fragment);
-  if (PlayerRole === "b") {
-    boardElement.classList.add("flipped");
-  } else {
-    boardElement.classList.remove("flipped");
-  }
+    boardElement.innerHTML = "";
+    boardElement.appendChild(fragment);
+    if (PlayerRole === "b") {
+      boardElement.classList.add("flipped");
+    } else {
+      boardElement.classList.remove("flipped");
+    }
 
-  updatePlayerBars();
-  updateGameStatus();
-  updateCapturedPieces();
+    updatePlayerBars();
+    updateGameStatus();
+    updateCapturedPieces();
 
-  // Re-apply saved board theme
-  const currentTheme = localStorage.getItem("chess-board-theme") || "classic";
-  applyBoardTheme(currentTheme);
+    // Re-apply saved board theme
+    const currentTheme = localStorage.getItem("chess-board-theme") || "classic";
+    applyBoardTheme(currentTheme);
   };
   // Debounced render: coalesce multiple rapid calls into one paint
   return () => {
@@ -826,9 +957,17 @@ const handleMove = (source, target) => {
     promotion: "q",
   };
   socket.emit("move", move);
+  // If playing vs AI, show immediate lightweight thinking indicator
+  if (isAIGame) {
+    clearAIThinking();
+    // show instantly and also set a safety timeout to re-check UI
+    attachAIThinking();
+    aiThinkingTimeout = setTimeout(() => {
+      // ensure UI is refreshed by rendering bars which will also append/clear spinner
+      updatePlayerBars();
+    }, 350);
+  }
 };
-
-
 
 // --- Update Player Info Bars ---
 function updatePlayerBars() {
@@ -853,6 +992,39 @@ function updatePlayerBars() {
     if (bottomStatus) {
       bottomStatus.textContent =
         turn === bottomColor ? "Your turn" : "Waiting…";
+    }
+
+    // If this is an AI match, show a lightweight thinking indicator on the AI side
+    if (isAIGame) {
+      // clear any existing inline indicator
+      const clearSpinner = (el) => {
+        if (!el) return;
+        const s = el.querySelector(".ai-spinner");
+        if (s) s.remove();
+      };
+      clearSpinner(playerTopEl);
+      clearSpinner(playerBottomEl);
+
+      const attachSpinner = (statusEl) => {
+        if (!statusEl) return;
+        const span = document.createElement("span");
+        span.className = "ai-spinner";
+        span.textContent = " ⏳";
+        statusEl.appendChild(span);
+      };
+
+      if (turn === topColor && aiColor === topColor) {
+        // AI thinking on top
+        if (topStatus) {
+          topStatus.textContent = "Thinking…";
+          attachSpinner(topStatus);
+        }
+      } else if (turn === bottomColor && aiColor === bottomColor) {
+        if (bottomStatus) {
+          bottomStatus.textContent = "Thinking…";
+          attachSpinner(bottomStatus);
+        }
+      }
     }
   }
 }
@@ -1032,6 +1204,8 @@ socket.on("roomJoined", (data) => {
   }
 
   // Go to game screen
+  // Hide chat for AI games to reduce UI work and improve smoothness
+  setChatVisibility(!isAIGame);
   showScreen(gameScreen);
 });
 
@@ -1050,12 +1224,15 @@ socket.on("playerRole", (role) => {
   PlayerRole = role;
   renderBoard();
   updateMoveList();
+  // Ensure chat visibility matches AI mode
+  setChatVisibility(!isAIGame);
 });
 
 socket.on("spectatorRole", () => {
   PlayerRole = null;
   renderBoard();
   updateMoveList();
+  setChatVisibility(!isAIGame);
 });
 
 // Timer display — single game clock above board
@@ -1110,6 +1287,14 @@ socket.on("move", (move) => {
   // Store last move for highlighting
   lastMove = { from, to };
 
+  // Clear AI thinking UI (if any)
+  if (aiThinkingTimeout) {
+    clearTimeout(aiThinkingTimeout);
+    aiThinkingTimeout = null;
+  }
+  // remove any spinner elements
+  document.querySelectorAll(".ai-spinner").forEach((s) => s.remove());
+
   // Play appropriate sound
   if (chess.isCheckmate() || chess.isStalemate() || chess.isDraw()) {
     playGameOverSound();
@@ -1136,14 +1321,23 @@ socket.on("playerNames", (data) => {
     const topName = playerTopEl.querySelector(".player-name");
     const bottomName = playerBottomEl.querySelector(".player-name");
 
-    if (topName) topName.textContent = topColor === "w" ? (data.white || "Waiting...") : (data.black || "Waiting...");
-    if (bottomName) bottomName.textContent = bottomColor === "w" ? (data.white || "Waiting...") : (data.black || "Waiting...");
+    if (topName)
+      topName.textContent =
+        topColor === "w"
+          ? data.white || "Waiting..."
+          : data.black || "Waiting...";
+    if (bottomName)
+      bottomName.textContent =
+        bottomColor === "w"
+          ? data.white || "Waiting..."
+          : data.black || "Waiting...";
 
     // Update avatars based on color
     const topAvatar = playerTopEl.querySelector(".player-avatar");
     const bottomAvatar = playerBottomEl.querySelector(".player-avatar");
     if (topAvatar) topAvatar.textContent = topColor === "w" ? "♔" : "♚";
-    if (bottomAvatar) bottomAvatar.textContent = bottomColor === "w" ? "♔" : "♚";
+    if (bottomAvatar)
+      bottomAvatar.textContent = bottomColor === "w" ? "♔" : "♚";
   }
 });
 
@@ -1240,9 +1434,16 @@ function resizeConfetti() {
 function createConfetti(count = 150) {
   confettiParticles = [];
   const colors = [
-    "#d4af37", "#f0d68a", "#22c55e", "#60a5fa",
-    "#f472b6", "#c084fc", "#fb923c", "#fff",
-    "#fbbf24", "#a78bfa",
+    "#d4af37",
+    "#f0d68a",
+    "#22c55e",
+    "#60a5fa",
+    "#f472b6",
+    "#c084fc",
+    "#fb923c",
+    "#fff",
+    "#fbbf24",
+    "#a78bfa",
   ];
 
   for (let i = 0; i < count; i++) {
@@ -1328,7 +1529,9 @@ socket.on("gameOver", (data) => {
   const isDraw = !data.winner;
 
   // Set modal theme
-  panel.className = "modal glass-panel gameover-modal-content " + (isDraw ? "draw" : isWin ? "win" : "loss");
+  panel.className =
+    "modal glass-panel gameover-modal-content " +
+    (isDraw ? "draw" : isWin ? "win" : "loss");
 
   let icon, title, message, quote;
 
@@ -1336,7 +1539,8 @@ socket.on("gameOver", (data) => {
     if (isWin) {
       icon = "👑";
       title = "Checkmate!";
-      message = "You delivered checkmate — your opponent's king had no escape. Brilliant!";
+      message =
+        "You delivered checkmate — your opponent's king had no escape. Brilliant!";
       quote = getRandomQuote(WIN_QUOTES);
     } else {
       icon = "♚";
@@ -1452,7 +1656,9 @@ socket.on("newGame", (data) => {
 });
 
 // Invalid move — silently ignore (piece snaps back)
-socket.on("invalidMove", () => { renderBoard(); });
+socket.on("invalidMove", () => {
+  renderBoard();
+});
 
 // ============================================================
 //  CHAT SYSTEM
@@ -1486,6 +1692,7 @@ function isEmojiOnly(text) {
 
 // --- Send Chat Message ---
 function sendChatMessage(inputEl) {
+  if (isAIGame) return; // disable chat during AI matches
   const text = inputEl.value.trim();
   if (!text || !currentUsername || !currentRoomCode) return;
 
@@ -1503,6 +1710,7 @@ function sendChatMessage(inputEl) {
 
 // --- Typing indicator ---
 function handleTypingInput() {
+  if (isAIGame) return; // no typing updates for AI games
   if (!currentRoomCode) return;
   if (!isTyping) {
     isTyping = true;
@@ -1528,7 +1736,9 @@ if (chatInput) {
 
 // Mobile controls
 if (btnSendChatMobile) {
-  btnSendChatMobile.addEventListener("click", () => sendChatMessage(chatInputMobile));
+  btnSendChatMobile.addEventListener("click", () =>
+    sendChatMessage(chatInputMobile),
+  );
 }
 if (chatInputMobile) {
   chatInputMobile.addEventListener("keydown", (e) => {
@@ -1538,16 +1748,20 @@ if (chatInputMobile) {
 }
 
 // --- Quick Emoji Buttons ---
-document.querySelectorAll(".emoji-btn:not(.emoji-btn-mobile)").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    const emoji = btn.dataset.emoji;
-    if (!emoji || !currentUsername || !currentRoomCode) return;
-    socket.emit("chatMessage", { text: emoji });
-    // Pop animation
-    btn.style.transform = "scale(1.4)";
-    setTimeout(() => { btn.style.transform = ""; }, 200);
+document
+  .querySelectorAll(".emoji-btn:not(.emoji-btn-mobile)")
+  .forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const emoji = btn.dataset.emoji;
+      if (!emoji || !currentUsername || !currentRoomCode) return;
+      socket.emit("chatMessage", { text: emoji });
+      // Pop animation
+      btn.style.transform = "scale(1.4)";
+      setTimeout(() => {
+        btn.style.transform = "";
+      }, 200);
+    });
   });
-});
 
 document.querySelectorAll(".emoji-btn-mobile").forEach((btn) => {
   btn.addEventListener("click", () => {
@@ -1555,7 +1769,9 @@ document.querySelectorAll(".emoji-btn-mobile").forEach((btn) => {
     if (!emoji || !currentUsername || !currentRoomCode) return;
     socket.emit("chatMessage", { text: emoji });
     btn.style.transform = "scale(1.4)";
-    setTimeout(() => { btn.style.transform = ""; }, 200);
+    setTimeout(() => {
+      btn.style.transform = "";
+    }, 200);
   });
 });
 
@@ -1660,7 +1876,8 @@ function clearChat() {
   unreadCount = 0;
   updateChatBadge();
   if (chatMessagesEl) {
-    chatMessagesEl.innerHTML = '<div class="chat-placeholder" id="chat-placeholder"><span class="chat-placeholder-icon">💬</span><span>No messages yet</span><span class="chat-placeholder-hint">Say hello to your opponent!</span></div>';
+    chatMessagesEl.innerHTML =
+      '<div class="chat-placeholder" id="chat-placeholder"><span class="chat-placeholder-icon">💬</span><span>No messages yet</span><span class="chat-placeholder-hint">Say hello to your opponent!</span></div>';
   }
   if (chatMessagesMobile) {
     chatMessagesMobile.innerHTML = "";
@@ -1669,6 +1886,7 @@ function clearChat() {
 
 // --- Receive chat message from server ---
 socket.on("chatMessage", (msg) => {
+  if (isAIGame) return; // ignore chat during AI matches
   chatMessages.push(msg);
 
   // Remove placeholder
@@ -1717,7 +1935,8 @@ socket.on("chatSystem", (text) => {
 // --- Typing indicator ---
 function showTypingIndicator(show) {
   if (chatTypingEl) chatTypingEl.style.display = show ? "flex" : "none";
-  if (chatTypingMobileEl) chatTypingMobileEl.style.display = show ? "flex" : "none";
+  if (chatTypingMobileEl)
+    chatTypingMobileEl.style.display = show ? "flex" : "none";
 }
 
 socket.on("chatTyping", (data) => {
@@ -1756,6 +1975,10 @@ if (btnLeaveGame) {
     chess.reset();
     gameoverModal.style.display = "none";
     clearChat();
+    // Reset AI mode and restore chat UI
+    isAIGame = false;
+    aiColor = null;
+    setChatVisibility(true);
     goToLobby();
   });
 }
@@ -1775,6 +1998,10 @@ if (btnModalLobby) {
     gameoverModal.style.display = "none";
     stopConfetti();
     clearChat();
+    // Reset AI mode and restore chat UI
+    isAIGame = false;
+    aiColor = null;
+    setChatVisibility(true);
     goToLobby();
   });
 }
@@ -1786,14 +2013,20 @@ if (btnModalLobby) {
 function applyBoardTheme(theme) {
   if (!boardElement) return;
   boardElement.classList.remove(
-    "theme-classic", "theme-emerald", "theme-ice",
-    "theme-tournament", "theme-marble", "theme-walnut"
+    "theme-classic",
+    "theme-emerald",
+    "theme-ice",
+    "theme-tournament",
+    "theme-marble",
+    "theme-walnut",
   );
   if (theme && theme !== "classic") {
     boardElement.classList.add(`theme-${theme}`);
   }
   localStorage.setItem("chess-board-theme", theme);
-  const radio = document.querySelector(`input[name="board-theme"][value="${theme}"]`);
+  const radio = document.querySelector(
+    `input[name="board-theme"][value="${theme}"]`,
+  );
   if (radio) radio.checked = true;
 }
 

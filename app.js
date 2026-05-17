@@ -17,6 +17,7 @@ const jwt = require("jsonwebtoken");
 const cookieParser = require("cookie-parser");
 const User = require("./models/User");
 const Game = require("./models/Game");
+const { Worker } = require("worker_threads");
 
 // ============================================================
 //  RATE LIMITER — prevents abuse under heavy traffic
@@ -305,327 +306,32 @@ async function recordGame(room) {
 }
 
 // ============================================================
-//  AI ENGINE — Minimax + Alpha-Beta + Piece-Square Tables
+//  AI ENGINE — Worker Thread (completely non-blocking)
+//  All AI computation runs in ai-worker.js in a separate thread
 // ============================================================
 
-const PIECE_VALUES = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 20000 };
+const AI_WORKER_PATH = path.join(__dirname, "ai-worker.js");
 
-// Piece-Square Tables (from white's perspective, row 0 = rank 8)
-const PST = {
-  p: [
-     0,  0,  0,  0,  0,  0,  0,  0,
-    50, 50, 50, 50, 50, 50, 50, 50,
-    10, 10, 20, 30, 30, 20, 10, 10,
-     5,  5, 10, 25, 25, 10,  5,  5,
-     0,  0,  0, 20, 20,  0,  0,  0,
-     5, -5,-10,  0,  0,-10, -5,  5,
-     5, 10, 10,-20,-20, 10, 10,  5,
-     0,  0,  0,  0,  0,  0,  0,  0,
-  ],
-  n: [
-   -50,-40,-30,-30,-30,-30,-40,-50,
-   -40,-20,  0,  0,  0,  0,-20,-40,
-   -30,  0, 10, 15, 15, 10,  0,-30,
-   -30,  5, 15, 20, 20, 15,  5,-30,
-   -30,  0, 15, 20, 20, 15,  0,-30,
-   -30,  5, 10, 15, 15, 10,  5,-30,
-   -40,-20,  0,  5,  5,  0,-20,-40,
-   -50,-40,-30,-30,-30,-30,-40,-50,
-  ],
-  b: [
-   -20,-10,-10,-10,-10,-10,-10,-20,
-   -10,  0,  0,  0,  0,  0,  0,-10,
-   -10,  0, 10, 10, 10, 10,  0,-10,
-   -10,  5,  5, 10, 10,  5,  5,-10,
-   -10,  0, 10, 10, 10, 10,  0,-10,
-   -10, 10, 10, 10, 10, 10, 10,-10,
-   -10,  5,  0,  0,  0,  0,  5,-10,
-   -20,-10,-10,-10,-10,-10,-10,-20,
-  ],
-  r: [
-     0,  0,  0,  0,  0,  0,  0,  0,
-     5, 10, 10, 10, 10, 10, 10,  5,
-    -5,  0,  0,  0,  0,  0,  0, -5,
-    -5,  0,  0,  0,  0,  0,  0, -5,
-    -5,  0,  0,  0,  0,  0,  0, -5,
-    -5,  0,  0,  0,  0,  0,  0, -5,
-    -5,  0,  0,  0,  0,  0,  0, -5,
-     0,  0,  0,  5,  5,  0,  0,  0,
-  ],
-  q: [
-   -20,-10,-10, -5, -5,-10,-10,-20,
-   -10,  0,  0,  0,  0,  0,  0,-10,
-   -10,  0,  5,  5,  5,  5,  0,-10,
-    -5,  0,  5,  5,  5,  5,  0, -5,
-     0,  0,  5,  5,  5,  5,  0, -5,
-   -10,  5,  5,  5,  5,  5,  0,-10,
-   -10,  0,  5,  0,  0,  0,  0,-10,
-   -20,-10,-10, -5, -5,-10,-10,-20,
-  ],
-  k: [ // Middlegame — stay castled, avoid center
-   -30,-40,-40,-50,-50,-40,-40,-30,
-   -30,-40,-40,-50,-50,-40,-40,-30,
-   -30,-40,-40,-50,-50,-40,-40,-30,
-   -30,-40,-40,-50,-50,-40,-40,-30,
-   -20,-30,-30,-40,-40,-30,-30,-20,
-   -10,-20,-20,-20,-20,-20,-20,-10,
-    20, 20,  0,  0,  0,  0, 20, 20,
-    20, 30, 10,  0,  0, 10, 30, 20,
-  ],
-  k_end: [ // Endgame — king should be active
-   -50,-40,-30,-20,-20,-30,-40,-50,
-   -30,-20,-10,  0,  0,-10,-20,-30,
-   -30,-10, 20, 30, 30, 20,-10,-30,
-   -30,-10, 30, 40, 40, 30,-10,-30,
-   -30,-10, 30, 40, 40, 30,-10,-30,
-   -30,-10, 20, 30, 30, 20,-10,-30,
-   -30,-30,  0,  0,  0,  0,-30,-30,
-   -50,-30,-30,-30,-30,-30,-30,-50,
-  ],
-};
-
-function isEndgame(board) {
-  let queens = 0, minors = 0;
-  for (let r = 0; r < 8; r++) {
-    for (let c = 0; c < 8; c++) {
-      const p = board[r][c];
-      if (!p) continue;
-      if (p.type === "q") queens++;
-      if (p.type === "n" || p.type === "b") minors++;
-    }
-  }
-  return queens === 0 || (queens <= 2 && minors <= 2);
-}
-
-function evaluateBoard(chess) {
-  if (chess.isCheckmate()) {
-    return chess.turn() === "w" ? -99999 : 99999;
-  }
-  if (chess.isDraw() || chess.isStalemate()) return 0;
-
-  let score = 0;
-  const board = chess.board();
-  const endgame = isEndgame(board);
-
-  for (let r = 0; r < 8; r++) {
-    for (let c = 0; c < 8; c++) {
-      const piece = board[r][c];
-      if (!piece) continue;
-
-      const idx = r * 8 + c;
-      const mirrorIdx = (7 - r) * 8 + c;
-
-      // Material value
-      let value = PIECE_VALUES[piece.type];
-
-      // Positional value from PST
-      let pstKey = piece.type;
-      if (piece.type === "k" && endgame) pstKey = "k_end";
-      const table = PST[pstKey];
-      if (table) {
-        value += piece.color === "w" ? table[mirrorIdx] : table[idx];
+function getAIMoveWorker(fen, difficulty) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(AI_WORKER_PATH, {
+      workerData: { fen, difficulty },
+    });
+    worker.on("message", (move) => resolve(move));
+    worker.on("error", (err) => {
+      console.error("AI Worker error:", err);
+      resolve(null);
+    });
+    worker.on("exit", (code) => {
+      if (code !== 0) {
+        console.error(`AI Worker exited with code ${code}`);
+        resolve(null);
       }
-
-      score += piece.color === "w" ? value : -value;
-    }
-  }
-
-  // Mobility bonus (lighter weight)
-  const mobility = chess.moves().length;
-  score += mobility * 2 * (chess.turn() === "w" ? 1 : -1);
-
-  // Check bonus
-  if (chess.isCheck()) {
-    score += chess.turn() === "w" ? -30 : 30;
-  }
-
-  return score;
-}
-
-// Move ordering — check captures and checks first for better pruning
-function orderMoves(chess, moves) {
-  return moves.sort((a, b) => {
-    let scoreA = 0, scoreB = 0;
-
-    // Captures: MVV-LVA (Most Valuable Victim - Least Valuable Aggressor)
-    if (a.captured) scoreA += PIECE_VALUES[a.captured] * 10 - PIECE_VALUES[a.piece];
-    if (b.captured) scoreB += PIECE_VALUES[b.captured] * 10 - PIECE_VALUES[b.piece];
-
-    // Promotions
-    if (a.promotion) scoreA += 800;
-    if (b.promotion) scoreB += 800;
-
-    // Checks (try the move to see if it gives check)
-    if (a.san && a.san.includes("+")) scoreA += 50;
-    if (b.san && b.san.includes("+")) scoreB += 50;
-
-    return scoreB - scoreA;
-  });
-}
-
-function minimax(chess, depth, alpha, beta, isMaximizing) {
-  if (depth === 0 || chess.isGameOver()) {
-    return evaluateBoard(chess);
-  }
-
-  const moves = chess.moves({ verbose: true });
-  orderMoves(chess, moves);
-
-  if (isMaximizing) {
-    let maxEval = -Infinity;
-    for (const move of moves) {
-      chess.move(move);
-      const eval_ = minimax(chess, depth - 1, alpha, beta, false);
-      chess.undo();
-      maxEval = Math.max(maxEval, eval_);
-      alpha = Math.max(alpha, eval_);
-      if (beta <= alpha) break;
-    }
-    return maxEval;
-  } else {
-    let minEval = Infinity;
-    for (const move of moves) {
-      chess.move(move);
-      const eval_ = minimax(chess, depth - 1, alpha, beta, true);
-      chess.undo();
-      minEval = Math.min(minEval, eval_);
-      beta = Math.min(beta, eval_);
-      if (beta <= alpha) break;
-    }
-    return minEval;
-  }
-}
-
-// Async wrapper: runs AI search in small yielding chunks so the event loop stays free
-function getAIMoveAsync(chessInstance, difficulty) {
-  return new Promise((resolve) => {
-    setImmediate(() => {
-      const result = getAIMove(chessInstance, difficulty);
-      resolve(result);
     });
   });
 }
 
-function getAIMove(chessInstance, difficulty) {
-  const moves = chessInstance.moves({ verbose: true });
-  if (moves.length === 0) return null;
-
-  // --- EASY: depth 1, makes mistakes 30% of the time ---
-  if (difficulty === "easy") {
-    // 30% chance of random move (simulates blunders)
-    if (Math.random() < 0.3) {
-      return moves[Math.floor(Math.random() * moves.length)];
-    }
-    // Otherwise depth-1 search (shallow, basic)
-    const isMax = chessInstance.turn() === "w";
-    let bestMove = moves[0];
-    let bestEval = isMax ? -Infinity : Infinity;
-    const shuffled = [...moves].sort(() => Math.random() - 0.5);
-    for (const move of shuffled) {
-      chessInstance.move(move);
-      const eval_ = evaluateBoard(chessInstance);
-      chessInstance.undo();
-      if (isMax ? eval_ > bestEval : eval_ < bestEval) {
-        bestEval = eval_;
-        bestMove = move;
-      }
-    }
-    return bestMove;
-  }
-
-  // --- MEDIUM: depth 2 (was 3 — reduced for snappy play) ---
-  // --- HARD: depth 3 (was 4 — reduced for snappy play) ---
-  const depth = difficulty === "medium" ? 2 : 3;
-  const isMaximizing = chessInstance.turn() === "w";
-
-  let bestMove = moves[0];
-  let bestEval = isMaximizing ? -Infinity : Infinity;
-
-  // Order moves for better pruning
-  orderMoves(chessInstance, moves);
-
-  // Add slight randomness to equally-evaluated moves for variety
-  const candidates = [];
-
-  for (const move of moves) {
-    chessInstance.move(move);
-    const eval_ = minimax(chessInstance, depth - 1, -Infinity, Infinity, !isMaximizing);
-    chessInstance.undo();
-
-    candidates.push({ move, eval: eval_ });
-
-    if (isMaximizing ? eval_ > bestEval : eval_ < bestEval) {
-      bestEval = eval_;
-      bestMove = move;
-    }
-  }
-
-  // Among moves with similar evaluation (within 15 centipawns), pick randomly for variety
-  const threshold = 15;
-  const topMoves = candidates.filter(c =>
-    Math.abs(c.eval - bestEval) <= threshold
-  );
-
-  if (topMoves.length > 1) {
-    bestMove = topMoves[Math.floor(Math.random() * topMoves.length)].move;
-  }
-
-  return bestMove;
-}
-
-// ============================================================
-//  TIMER SYSTEM — single shared game clock, timeout = draw
-// ============================================================
-
-function startTimer(roomCode) {
-  const room = rooms.get(roomCode);
-  if (!room || room.gameOver || room.timeControl === 0) return;
-
-  stopTimer(roomCode);
-  room.lastTickTime = Date.now();
-
-  room.timerInterval = setInterval(() => {
-    const current = rooms.get(roomCode);
-    if (!current || current.gameOver) { stopTimer(roomCode); return; }
-
-    const now = Date.now();
-    const elapsed = (now - current.lastTickTime) / 1000;
-    current.lastTickTime = now;
-    current.gameTimer -= elapsed;
-
-    if (current.gameTimer <= 0) {
-      current.gameTimer = 0;
-      current.gameOver = true;
-      current.gameOverReason = "timeout";
-      stopTimer(roomCode);
-      io.to(roomCode).emit("timerUpdate", { time: 0 });
-      io.to(roomCode).emit("gameOver", {
-        reason: "timeout",
-        winner: null,
-        winnerName: null,
-      });
-      recordGame(current);
-      return;
-    }
-
-    io.to(roomCode).emit("timerUpdate", { time: current.gameTimer });
-  }, 1000);
-}
-
-function stopTimer(roomCode) {
-  const room = rooms.get(roomCode);
-  if (!room) return;
-  if (room.timerInterval) {
-    clearInterval(room.timerInterval);
-    room.timerInterval = null;
-  }
-}
-
-// ============================================================
-//  AI ENGINE — fast, non-blocking AI moves
-// ============================================================
-
-// Make AI move with minimal delay + async computation to never block the event loop
+// Schedule AI move with a small natural delay + worker thread computation
 function scheduleAIMove(roomCode) {
   const room = rooms.get(roomCode);
   if (!room || !room.isAI || room.gameOver) return;
@@ -633,32 +339,35 @@ function scheduleAIMove(roomCode) {
   const aiColor = room.aiColor;
   if (room.chess.turn() !== aiColor) return;
 
-  // Short fixed delay so the move doesn't feel instant (more natural)
-  const delay = room.aiDifficulty === "easy" ? 200 : room.aiDifficulty === "medium" ? 350 : 500;
+  // Small delay so the move doesn't feel instant
+  const delay = room.aiDifficulty === "easy" ? 200 : room.aiDifficulty === "medium" ? 400 : 600;
 
   setTimeout(async () => {
     const currentRoom = rooms.get(roomCode);
     if (!currentRoom || currentRoom.gameOver) return;
     if (currentRoom.chess.turn() !== aiColor) return;
 
-    // Use async wrapper so event loop stays free during computation
-    const aiMove = await getAIMoveAsync(currentRoom.chess, currentRoom.aiDifficulty);
-    if (!aiMove) return;
+    try {
+      // Run AI in worker thread — main event loop stays completely free
+      const aiMove = await getAIMoveWorker(currentRoom.chess.fen(), currentRoom.aiDifficulty);
+      if (!aiMove) return;
 
-    // Double-check room is still valid after async
-    const recheck = rooms.get(roomCode);
-    if (!recheck || recheck.gameOver) return;
+      // Re-check room is still valid after async worker
+      const recheck = rooms.get(roomCode);
+      if (!recheck || recheck.gameOver) return;
+      if (recheck.chess.turn() !== aiColor) return;
 
-    const moveObj = { from: aiMove.from, to: aiMove.to, promotion: aiMove.promotion || "q" };
-    recheck.chess.move(moveObj);
-    recheck.moveHistory.push(moveObj);
+      recheck.chess.move(aiMove);
+      recheck.moveHistory.push(aiMove);
 
-    io.to(roomCode).emit("move", moveObj);
-
-    // Check game over after AI move
-    checkGameOver(recheck, roomCode);
+      io.to(roomCode).emit("move", aiMove);
+      checkGameOver(recheck, roomCode);
+    } catch (err) {
+      console.error("AI move error:", err);
+    }
   }, delay);
 }
+
 
 function checkGameOver(room, roomCode) {
   const isOver = room.chess.isCheckmate() || room.chess.isStalemate() || room.chess.isDraw() || room.chess.isThreefoldRepetition() || room.chess.isInsufficientMaterial();
@@ -818,7 +527,7 @@ io.on("connection", (uniquesocket) => {
     socketUsers.set(uniquesocket.id, username);
     uniquesocket.join(roomCode);
 
-    uniquesocket.emit("roomJoined", { roomCode, timeControl: room.timeControl });
+    uniquesocket.emit("roomJoined", { roomCode, timeControl: room.timeControl, isAI: true });
     uniquesocket.emit("playerRole", playerColor === "white" ? "w" : "b");
     uniquesocket.emit("boardState", room.chess.fen());
     broadcastRoomState(roomCode);
@@ -899,7 +608,7 @@ io.on("connection", (uniquesocket) => {
       io.to(roomCode).emit("chatSystem", `${username} joined the game`);
     }
 
-    uniquesocket.emit("roomJoined", { roomCode, timeControl: room.timeControl });
+    uniquesocket.emit("roomJoined", { roomCode, timeControl: room.timeControl, isAI: !!room.isAI });
     uniquesocket.emit("boardState", room.chess.fen());
     broadcastRoomState(roomCode);
 
