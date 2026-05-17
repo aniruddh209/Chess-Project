@@ -625,7 +625,7 @@ function safeStartTimer(roomCode) {
   if (typeof startTimer === "function") {
     startTimer(roomCode);
   } else {
-    console.warn("Timer system is unavailable. Game continues without time limits; check timer initialization.");
+    console.warn("Timer system unavailable, game continues without time limits.");
   }
 }
 
