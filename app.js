@@ -577,15 +577,7 @@ function getAIMove(chessInstance, difficulty) {
 //  TIMER SYSTEM — single shared game clock, timeout = draw
 // ============================================================
 
-function safeStartTimer(roomCode) {
-  if (typeof startTimer !== "function") {
-    console.error(`Timer start skipped for room ${roomCode}: startTimer is not defined`);
-    return;
-  }
-  startTimer(roomCode);
-}
-
-function startTimer(roomCode) {
+function startRoomTimer(roomCode) {
   const room = rooms.get(roomCode);
   if (!room || room.gameOver || room.timeControl === 0) return;
 
@@ -618,6 +610,11 @@ function startTimer(roomCode) {
 
     io.to(roomCode).emit("timerUpdate", { time: current.gameTimer });
   }, 1000);
+}
+
+// Backward-compatible alias for existing timer start calls.
+function startTimer(roomCode) {
+  startRoomTimer(roomCode);
 }
 
 function stopTimer(roomCode) {
@@ -834,7 +831,7 @@ io.on("connection", (uniquesocket) => {
     // Send initial timer and start game clock
     if (tc > 0) {
       io.to(roomCode).emit("timerUpdate", { time: room.gameTimer });
-      safeStartTimer(roomCode);
+      startRoomTimer(roomCode);
     }
 
     io.to(roomCode).emit("chatSystem", `🤖 Playing against AI (${difficulty})`);
@@ -914,7 +911,7 @@ io.on("connection", (uniquesocket) => {
     // Start game clock when both players are in (PvP)
     if (room.players.white && room.players.black && room.timeControl > 0) {
       io.to(roomCode).emit("timerUpdate", { time: room.gameTimer });
-      safeStartTimer(roomCode);
+      startRoomTimer(roomCode);
     }
   });
 
