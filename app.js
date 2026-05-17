@@ -624,9 +624,10 @@ function stopTimer(roomCode) {
 function safeStartTimer(roomCode) {
   if (typeof startTimer === "function") {
     startTimer(roomCode);
-    return;
   }
-  console.warn("Timer system is unavailable; continuing without game clock.");
+  else {
+    console.warn("Timer system is unavailable; continuing without game clock.");
+  }
 }
 
 // ============================================================
