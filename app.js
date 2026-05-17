@@ -24,6 +24,9 @@ const Game = require("./models/Game");
 const rateLimitMap = new Map();
 const RATE_LIMIT_WINDOW = 1000; // 1 second
 const RATE_LIMIT_MAX = 15; // max events per window
+const MEDIUM_AI_BUDGET_MS = 120;
+const HARD_AI_BUDGET_MS = 220;
+const AI_BUDGET_CHECK_INTERVAL = 4;
 
 function rateLimit(socketId) {
   const now = Date.now();
@@ -547,11 +550,13 @@ function getAIMove(chessInstance, difficulty) {
 
   // Add slight randomness to equally-evaluated moves for variety
   const candidates = [];
+  // Only medium/hard reach this branch (easy returns above)
+  const budgetMs = difficulty === "hard" ? HARD_AI_BUDGET_MS : MEDIUM_AI_BUDGET_MS;
 
-  for (const move of moves) {
-    // Keep the AI responsive under heavy positions
-    const budgetMs = difficulty === "medium" ? 120 : 220;
-    if (Date.now() - searchStart > budgetMs) break;
+  for (let index = 0; index < moves.length; index++) {
+    const move = moves[index];
+    // Keep AI responsive: check budget periodically, but always evaluate at least one move.
+    if (index > 0 && index % AI_BUDGET_CHECK_INTERVAL === 0 && Date.now() - searchStart > budgetMs) break;
 
     chessInstance.move(move);
     const eval_ = minimax(chessInstance, depth - 1, -Infinity, Infinity, !isMaximizing);
@@ -582,13 +587,9 @@ function getAIMove(chessInstance, difficulty) {
 //  TIMER SYSTEM — single shared game clock, timeout = draw
 // ============================================================
 
-function startTimer(roomCode) {
+function beginTimerLoop(roomCode) {
   const room = rooms.get(roomCode);
-  if (!room || room.gameOver || room.timeControl === 0) return;
-
-  stopTimer(roomCode);
-  room.lastTickTime = Date.now();
-
+  if (!room) return;
   room.timerInterval = setInterval(() => {
     const current = rooms.get(roomCode);
     if (!current || current.gameOver) { stopTimer(roomCode); return; }
@@ -617,20 +618,21 @@ function startTimer(roomCode) {
   }, 1000);
 }
 
+function startTimer(roomCode) {
+  const room = rooms.get(roomCode);
+  if (!room || room.gameOver || room.timeControl === 0) return;
+
+  stopTimer(roomCode);
+  room.lastTickTime = Date.now();
+  beginTimerLoop(roomCode);
+}
+
 function stopTimer(roomCode) {
   const room = rooms.get(roomCode);
   if (!room) return;
   if (room.timerInterval) {
     clearInterval(room.timerInterval);
     room.timerInterval = null;
-  }
-}
-
-function safeStartTimer(roomCode) {
-  if (typeof startTimer === "function") {
-    startTimer(roomCode);
-  } else {
-    console.error(`startTimer is not defined for room ${roomCode}`);
   }
 }
 
@@ -839,7 +841,7 @@ io.on("connection", (uniquesocket) => {
     // Send initial timer and start game clock
     if (tc > 0) {
       io.to(roomCode).emit("timerUpdate", { time: room.gameTimer });
-      safeStartTimer(roomCode);
+      startTimer(roomCode);
     }
 
     io.to(roomCode).emit("chatSystem", `🤖 Playing against AI (${difficulty})`);
@@ -919,7 +921,7 @@ io.on("connection", (uniquesocket) => {
     // Start game clock when both players are in (PvP)
     if (room.players.white && room.players.black && room.timeControl > 0) {
       io.to(roomCode).emit("timerUpdate", { time: room.gameTimer });
-      safeStartTimer(roomCode);
+      startTimer(roomCode);
     }
   });
 
