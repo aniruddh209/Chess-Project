@@ -577,7 +577,7 @@ function getAIMove(chessInstance, difficulty) {
 //  TIMER SYSTEM — single shared game clock, timeout = draw
 // ============================================================
 
-function startTimer(roomCode) {
+function startTimerImpl(roomCode) {
   const room = rooms.get(roomCode);
   if (!room || room.gameOver || room.timeControl === 0) return;
 
@@ -612,6 +612,10 @@ function startTimer(roomCode) {
   }, 1000);
 }
 
+function startTimer(roomCode) {
+  startTimerImpl(roomCode);
+}
+
 function stopTimer(roomCode) {
   const room = rooms.get(roomCode);
   if (!room) return;
@@ -626,6 +630,7 @@ function triggerTimerStart(roomCode) {
     startTimer(roomCode);
   } else {
     console.warn(`startTimer is unavailable for room ${roomCode}`);
+    startTimerImpl(roomCode);
   }
 }
 
