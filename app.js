@@ -509,6 +509,7 @@ function getAIMoveAsync(chessInstance, difficulty) {
 function getAIMove(chessInstance, difficulty) {
   const moves = chessInstance.moves({ verbose: true });
   if (moves.length === 0) return null;
+  const searchStart = Date.now();
 
   // --- EASY: depth 1, makes mistakes 30% of the time ---
   if (difficulty === "easy") {
@@ -548,6 +549,10 @@ function getAIMove(chessInstance, difficulty) {
   const candidates = [];
 
   for (const move of moves) {
+    // Keep the AI responsive under heavy positions
+    const budgetMs = difficulty === "medium" ? 120 : 220;
+    if (Date.now() - searchStart > budgetMs) break;
+
     chessInstance.move(move);
     const eval_ = minimax(chessInstance, depth - 1, -Infinity, Infinity, !isMaximizing);
     chessInstance.undo();
@@ -618,6 +623,14 @@ function stopTimer(roomCode) {
   if (room.timerInterval) {
     clearInterval(room.timerInterval);
     room.timerInterval = null;
+  }
+}
+
+function safeStartTimer(roomCode) {
+  if (typeof startTimer === "function") {
+    startTimer(roomCode);
+  } else {
+    console.error(`startTimer is not defined for room ${roomCode}`);
   }
 }
 
@@ -826,7 +839,7 @@ io.on("connection", (uniquesocket) => {
     // Send initial timer and start game clock
     if (tc > 0) {
       io.to(roomCode).emit("timerUpdate", { time: room.gameTimer });
-      startTimer(roomCode);
+      safeStartTimer(roomCode);
     }
 
     io.to(roomCode).emit("chatSystem", `🤖 Playing against AI (${difficulty})`);
@@ -906,7 +919,7 @@ io.on("connection", (uniquesocket) => {
     // Start game clock when both players are in (PvP)
     if (room.players.white && room.players.black && room.timeControl > 0) {
       io.to(roomCode).emit("timerUpdate", { time: room.gameTimer });
-      startTimer(roomCode);
+      safeStartTimer(roomCode);
     }
   });
 
