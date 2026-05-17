@@ -624,6 +624,8 @@ function stopTimer(roomCode) {
 function triggerTimerStart(roomCode) {
   if (typeof startTimer === "function") {
     startTimer(roomCode);
+  } else {
+    console.warn(`startTimer is unavailable for room ${roomCode}`);
   }
 }
 
