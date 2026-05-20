@@ -45,6 +45,7 @@ const authScreen = document.getElementById("auth-screen");
 const lobbyScreen = document.getElementById("lobby-screen");
 const waitingScreen = document.getElementById("waiting-screen");
 const gameScreen = document.getElementById("game-screen");
+const offlineGameScreen = document.getElementById("offline-game-screen");
 
 // Auth elements
 const loginForm = document.getElementById("login-form");
@@ -113,8 +114,8 @@ let sourceSquare = null;
 
 function showScreen(screen) {
   // Hide all screens
-  [authScreen, lobbyScreen, waitingScreen, gameScreen].forEach((s) => {
-    s.classList.remove("active-screen");
+  [authScreen, lobbyScreen, waitingScreen, gameScreen, offlineGameScreen].forEach((s) => {
+    if (s) s.classList.remove("active-screen");
   });
   // Show target screen
   screen.classList.add("active-screen");
@@ -1905,6 +1906,691 @@ async function tryAutoLogin() {
   showScreen(authScreen);
   renderBoard();
   updateMoveList();
+}
+
+// ============================================================
+//  OFFLINE PvP — FULL LOCAL GAME (no server needed)
+// ============================================================
+
+const offlineChess = new Chess();
+const offlineBoardEl = document.getElementById("offline-chessboard");
+const offlinePlayerTopEl = document.getElementById("offline-player-top");
+const offlinePlayerBottomEl = document.getElementById("offline-player-bottom");
+const offlineTimerWhiteEl = document.getElementById("offline-timer-white");
+const offlineTimerBlackEl = document.getElementById("offline-timer-black");
+const offlineCapturedWhiteEl = document.getElementById("offline-captured-by-white");
+const offlineCapturedBlackEl = document.getElementById("offline-captured-by-black");
+const offlineTurnBanner = document.getElementById("offline-turn-banner");
+const offlineTurnDot = document.getElementById("offline-turn-dot");
+const offlineTurnText = document.getElementById("offline-turn-text");
+const offlineGameStatus = document.getElementById("offline-game-status");
+const offlineStatusText = document.getElementById("offline-status-text");
+
+let offlineGameActive = false;
+let offlineGameOver = false;
+let offlineTimeControl = 600; // seconds
+let offlineWhiteTime = 600;
+let offlineBlackTime = 600;
+let offlineTimerInterval = null;
+let offlineTimerRAF = null;
+let offlineLastMove = null;
+let offlineSelectedSquare = null;
+let offlineDraggedPiece = null;
+let offlineSourceSquare = null;
+let offlineStartTime = Date.now();
+
+// --- Offline Timer System (per-player clocks) ---
+
+function offlineFormatTime(secs) {
+  if (secs <= 0) return "0:00";
+  const m = Math.floor(secs / 60);
+  const s = Math.floor(secs % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function offlineUpdateTimerDisplay() {
+  if (offlineTimerWhiteEl) {
+    const valEl = offlineTimerWhiteEl.querySelector(".offline-timer-value");
+    if (valEl) valEl.textContent = offlineFormatTime(offlineWhiteTime);
+    offlineTimerWhiteEl.classList.toggle("timer-low", offlineWhiteTime <= 30 && offlineWhiteTime > 0);
+  }
+  if (offlineTimerBlackEl) {
+    const valEl = offlineTimerBlackEl.querySelector(".offline-timer-value");
+    if (valEl) valEl.textContent = offlineFormatTime(offlineBlackTime);
+    offlineTimerBlackEl.classList.toggle("timer-low", offlineBlackTime <= 30 && offlineBlackTime > 0);
+  }
+}
+
+let offlineTimerAnchor = null;
+let offlineTimerActiveColor = null; // 'w' or 'b'
+
+function offlineStartTimer() {
+  offlineStopTimer();
+  if (offlineTimeControl <= 0 || offlineGameOver) return;
+  offlineTimerActiveColor = offlineChess.turn();
+  offlineTimerAnchor = performance.now();
+
+  function tick() {
+    if (offlineGameOver || offlineTimeControl <= 0) return;
+    const elapsed = (performance.now() - offlineTimerAnchor) / 1000;
+    if (offlineTimerActiveColor === "w") {
+      offlineWhiteTime = Math.max(0, offlineWhiteTime - elapsed);
+    } else {
+      offlineBlackTime = Math.max(0, offlineBlackTime - elapsed);
+    }
+    offlineTimerAnchor = performance.now();
+    offlineUpdateTimerDisplay();
+
+    // Check timeout
+    if (offlineWhiteTime <= 0) {
+      offlineWhiteTime = 0;
+      offlineHandleTimeout("white");
+      return;
+    }
+    if (offlineBlackTime <= 0) {
+      offlineBlackTime = 0;
+      offlineHandleTimeout("black");
+      return;
+    }
+    offlineTimerRAF = requestAnimationFrame(tick);
+  }
+
+  offlineTimerRAF = requestAnimationFrame(tick);
+}
+
+function offlineStopTimer() {
+  if (offlineTimerRAF) {
+    cancelAnimationFrame(offlineTimerRAF);
+    offlineTimerRAF = null;
+  }
+}
+
+function offlineHandleTimeout(loserColor) {
+  offlineGameOver = true;
+  offlineStopTimer();
+  const winnerColor = loserColor === "white" ? "black" : "white";
+  offlineShowGameOver("timeout", winnerColor);
+}
+
+// --- Start Offline Game (reusable) ---
+
+function startOfflineGame(tc) {
+  offlineTimeControl = tc;
+  offlineWhiteTime = tc;
+  offlineBlackTime = tc;
+  offlineChess.reset();
+  offlineGameOver = false;
+  offlineGameActive = true;
+  offlineLastMove = null;
+  offlineSelectedSquare = null;
+  offlineStartTime = Date.now();
+
+  // Show/hide timers
+  if (offlineTimerWhiteEl && offlineTimerBlackEl) {
+    if (tc > 0) {
+      offlineTimerWhiteEl.style.display = "flex";
+      offlineTimerBlackEl.style.display = "flex";
+      offlineUpdateTimerDisplay();
+    } else {
+      offlineTimerWhiteEl.style.display = "none";
+      offlineTimerBlackEl.style.display = "none";
+    }
+  }
+
+  // Hide gameover modal if showing
+  if (gameoverModal) gameoverModal.style.display = "none";
+  stopConfetti();
+
+  showScreen(offlineGameScreen);
+  offlineRenderBoard();
+  offlineUpdateTurn();
+  offlineUpdateCaptured();
+  if (offlineGameStatus) offlineGameStatus.style.display = "none";
+
+  // Start timer
+  if (tc > 0) offlineStartTimer();
+}
+
+// Lobby "Offline PvP" button
+const btnOfflinePvP = document.getElementById("btn-offline-pvp");
+if (btnOfflinePvP) {
+  btnOfflinePvP.addEventListener("click", () => {
+    const tc = parseInt(document.querySelector('input[name="offline-time"]:checked')?.value || "600");
+    startOfflineGame(tc);
+  });
+}
+
+// Auth screen "Play Offline PvP" button — works without login
+const btnAuthOfflinePvP = document.getElementById("btn-auth-offline-pvp");
+if (btnAuthOfflinePvP) {
+  btnAuthOfflinePvP.addEventListener("click", () => {
+    const tc = parseInt(document.querySelector('input[name="auth-offline-time"]:checked')?.value || "600");
+    startOfflineGame(tc);
+  });
+}
+
+// --- Offline Board Rendering ---
+
+function offlineGetLegalMoves(row, col) {
+  const sq = `${String.fromCharCode(97 + col)}${8 - row}`;
+  return offlineChess.moves({ square: sq, verbose: true });
+}
+
+function offlineClearSelection() {
+  offlineSelectedSquare = null;
+  if (offlineBoardEl) {
+    offlineBoardEl.querySelectorAll(".square.selected").forEach((el) => el.classList.remove("selected"));
+    offlineBoardEl.querySelectorAll(".legal-dot").forEach((el) => el.remove());
+    offlineBoardEl.querySelectorAll(".legal-capture").forEach((el) => el.classList.remove("legal-capture"));
+  }
+}
+
+function offlineShowLegalMoves(row, col) {
+  const moves = offlineGetLegalMoves(row, col);
+  moves.forEach((move) => {
+    const target = algebraicToRowCol(move.to);
+    const targetSquare = offlineBoardEl.querySelector(
+      `.square[data-row="${target.row}"][data-col="${target.col}"]`
+    );
+    if (!targetSquare) return;
+    if (move.captured) {
+      targetSquare.classList.add("legal-capture");
+    } else {
+      const dot = document.createElement("div");
+      dot.classList.add("legal-dot");
+      targetSquare.appendChild(dot);
+    }
+  });
+}
+
+function offlineRenderBoard() {
+  if (!offlineBoardEl) return;
+  const board = offlineChess.board();
+  const fragment = document.createDocumentFragment();
+
+  board.forEach((row, rowindex) => {
+    row.forEach((square, squareindex) => {
+      const squareElement = document.createElement("div");
+      squareElement.classList.add(
+        "square",
+        (rowindex + squareindex) % 2 === 0 ? "light" : "dark"
+      );
+      squareElement.dataset.row = rowindex;
+      squareElement.dataset.col = squareindex;
+
+      // Last move highlighting
+      if (offlineLastMove) {
+        if (
+          (rowindex === offlineLastMove.from.row && squareindex === offlineLastMove.from.col) ||
+          (rowindex === offlineLastMove.to.row && squareindex === offlineLastMove.to.col)
+        ) {
+          squareElement.classList.add("highlight");
+        }
+      }
+
+      // King in check / checkmate highlighting
+      if (square && square.type === "k") {
+        if (offlineChess.isCheckmate() && offlineChess.turn() === square.color) {
+          squareElement.classList.add("king-checkmate");
+        } else if (offlineChess.isCheck() && offlineChess.turn() === square.color) {
+          squareElement.classList.add("king-in-check");
+        }
+      }
+
+      if (square) {
+        const pieceElement = document.createElement("div");
+        pieceElement.classList.add("piece", square.color === "w" ? "white" : "black");
+
+        const img = document.createElement("img");
+        img.src = getPieceImageUrl(square);
+        img.alt = getPieceUnicode(square);
+        img.classList.add("piece-img");
+        img.draggable = false;
+        pieceElement.appendChild(img);
+
+        // In offline mode, both colors are draggable on their turn
+        const isMyTurn = offlineChess.turn() === square.color && !offlineGameOver;
+        pieceElement.draggable = isMyTurn;
+        if (isMyTurn) pieceElement.classList.add("draggable");
+
+        // Drag events
+        pieceElement.addEventListener("dragstart", (e) => {
+          if (!pieceElement.draggable) return;
+          offlineClearSelection();
+          offlineDraggedPiece = pieceElement;
+          offlineSourceSquare = { row: rowindex, col: squareindex };
+          e.dataTransfer.setData("text/plain", "");
+          if (img.complete) {
+            e.dataTransfer.setDragImage(img, img.width / 2, img.height / 2);
+          }
+          setTimeout(() => pieceElement.classList.add("dragging"), 0);
+        });
+
+        pieceElement.addEventListener("dragend", () => {
+          if (offlineDraggedPiece) offlineDraggedPiece.classList.remove("dragging");
+          offlineDraggedPiece = null;
+          offlineSourceSquare = null;
+        });
+
+        squareElement.appendChild(pieceElement);
+      }
+
+      // Click-to-move
+      squareElement.addEventListener("click", () => {
+        if (offlineGameOver) return;
+        const currentTurn = offlineChess.turn();
+
+        if (offlineSelectedSquare) {
+          const targetRow = rowindex;
+          const targetCol = squareindex;
+
+          if (targetRow === offlineSelectedSquare.row && targetCol === offlineSelectedSquare.col) {
+            offlineClearSelection();
+            return;
+          }
+
+          const moves = offlineGetLegalMoves(offlineSelectedSquare.row, offlineSelectedSquare.col);
+          const targetAlg = `${String.fromCharCode(97 + targetCol)}${8 - targetRow}`;
+          const isLegal = moves.some((m) => m.to === targetAlg);
+
+          if (isLegal) {
+            offlineHandleMove(offlineSelectedSquare, { row: targetRow, col: targetCol });
+            offlineClearSelection();
+          } else if (square && square.color === currentTurn) {
+            offlineClearSelection();
+            offlineSelectedSquare = { row: rowindex, col: squareindex };
+            squareElement.classList.add("selected");
+            offlineShowLegalMoves(rowindex, squareindex);
+          } else {
+            offlineClearSelection();
+          }
+        } else {
+          if (square && square.color === currentTurn) {
+            offlineClearSelection();
+            offlineSelectedSquare = { row: rowindex, col: squareindex };
+            squareElement.classList.add("selected");
+            offlineShowLegalMoves(rowindex, squareindex);
+          }
+        }
+      });
+
+      // Drag events on squares
+      squareElement.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        squareElement.classList.add("drop-target");
+      });
+      squareElement.addEventListener("dragleave", () => {
+        squareElement.classList.remove("drop-target");
+      });
+      squareElement.addEventListener("drop", (e) => {
+        e.preventDefault();
+        squareElement.classList.remove("drop-target");
+        offlineClearSelection();
+        if (offlineDraggedPiece) {
+          const targetSource = {
+            row: parseInt(squareElement.dataset.row),
+            col: parseInt(squareElement.dataset.col),
+          };
+          offlineHandleMove(offlineSourceSquare, targetSource);
+        }
+      });
+
+      fragment.appendChild(squareElement);
+    });
+  });
+
+  offlineBoardEl.innerHTML = "";
+  offlineBoardEl.appendChild(fragment);
+  // No flip — both players share the same device, board stays white-perspective
+  offlineBoardEl.classList.remove("flipped");
+
+  offlineUpdateTurn();
+  offlineUpdateCaptured();
+  offlineUpdateGameStatus();
+
+  // Apply saved theme
+  const currentTheme = localStorage.getItem("chess-board-theme") || "classic";
+  offlineBoardEl.classList.remove("theme-classic", "theme-emerald", "theme-ice", "theme-tournament", "theme-marble", "theme-walnut");
+  if (currentTheme && currentTheme !== "classic") {
+    offlineBoardEl.classList.add(`theme-${currentTheme}`);
+  }
+}
+
+// --- Handle Move (offline) ---
+
+function offlineHandleMove(source, target) {
+  if (offlineGameOver) return;
+
+  const from = `${String.fromCharCode(97 + source.col)}${8 - source.row}`;
+  const to = `${String.fromCharCode(97 + target.col)}${8 - target.row}`;
+
+  // Check capture before move
+  const boardBefore = offlineChess.board();
+  const toPos = algebraicToRowCol(to);
+  const targetPiece = boardBefore[toPos.row] && boardBefore[toPos.row][toPos.col];
+
+  let result;
+  try {
+    result = offlineChess.move({ from, to, promotion: "q" });
+  } catch (e) {
+    return;
+  }
+  if (!result) return;
+
+  // Update last move
+  offlineLastMove = { from: algebraicToRowCol(from), to: algebraicToRowCol(to) };
+
+  // Sound
+  if (offlineChess.isCheckmate() || offlineChess.isStalemate() || offlineChess.isDraw()) {
+    playGameOverSound();
+  } else if (offlineChess.inCheck()) {
+    playCheckSound();
+  } else if (targetPiece || result.captured) {
+    playCaptureSound();
+  } else {
+    playMoveSound();
+  }
+
+  // Switch timer
+  offlineStopTimer();
+  if (offlineTimeControl > 0 && !offlineChess.isGameOver()) {
+    offlineStartTimer();
+  }
+
+  offlineRenderBoard();
+
+  // Check game over
+  offlineCheckGameOver();
+}
+
+function offlineCheckGameOver() {
+  if (offlineChess.isCheckmate()) {
+    offlineGameOver = true;
+    offlineStopTimer();
+    const winnerColor = offlineChess.turn() === "w" ? "black" : "white";
+    offlineShowGameOver("checkmate", winnerColor);
+  } else if (offlineChess.isStalemate()) {
+    offlineGameOver = true;
+    offlineStopTimer();
+    offlineShowGameOver("stalemate", null);
+  } else if (offlineChess.isThreefoldRepetition()) {
+    offlineGameOver = true;
+    offlineStopTimer();
+    offlineShowGameOver("threefold_repetition", null);
+  } else if (offlineChess.isInsufficientMaterial()) {
+    offlineGameOver = true;
+    offlineStopTimer();
+    offlineShowGameOver("insufficient_material", null);
+  } else if (offlineChess.isDraw()) {
+    offlineGameOver = true;
+    offlineStopTimer();
+    const halfMoves = offlineChess.fen().split(" ")[4];
+    const reason = parseInt(halfMoves) >= 100 ? "fifty_move_rule" : "draw";
+    offlineShowGameOver(reason, null);
+  }
+}
+
+// --- Turn Indicator ---
+
+function offlineUpdateTurn() {
+  if (!offlineTurnBanner) return;
+  const turn = offlineChess.turn();
+  const isWhite = turn === "w";
+
+  if (offlineTurnText) offlineTurnText.textContent = isWhite ? "White's Turn" : "Black's Turn";
+  if (offlineTurnDot) {
+    offlineTurnDot.style.background = isWhite ? "#f0d9b5" : "#333";
+    offlineTurnDot.style.boxShadow = isWhite
+      ? "0 0 12px rgba(240,217,181,0.6)"
+      : "0 0 12px rgba(60,60,60,0.6)";
+  }
+
+  // Player bars
+  if (offlinePlayerTopEl) {
+    offlinePlayerTopEl.classList.toggle("active", turn === "b");
+    const st = offlinePlayerTopEl.querySelector(".player-status");
+    if (st) st.textContent = turn === "b" ? "Your turn" : "Waiting…";
+  }
+  if (offlinePlayerBottomEl) {
+    offlinePlayerBottomEl.classList.toggle("active", turn === "w");
+    const st = offlinePlayerBottomEl.querySelector(".player-status");
+    if (st) st.textContent = turn === "w" ? "Your turn" : "Waiting…";
+  }
+}
+
+// --- Update Game Status (check/game over banners) ---
+
+function offlineUpdateGameStatus() {
+  if (!offlineGameStatus || !offlineStatusText) return;
+
+  if (offlineChess.isCheckmate()) {
+    const winner = offlineChess.turn() === "w" ? "Black" : "White";
+    offlineStatusText.textContent = `♚ Checkmate! ${winner} wins!`;
+    offlineGameStatus.className = "game-status-banner gameover";
+    offlineGameStatus.style.display = "block";
+  } else if (offlineChess.isStalemate()) {
+    offlineStatusText.textContent = "½ Stalemate — Draw!";
+    offlineGameStatus.className = "game-status-banner gameover";
+    offlineGameStatus.style.display = "block";
+  } else if (offlineChess.isCheck()) {
+    offlineStatusText.textContent = "⚠ Check!";
+    offlineGameStatus.className = "game-status-banner check";
+    offlineGameStatus.style.display = "block";
+  } else {
+    offlineGameStatus.style.display = "none";
+  }
+}
+
+// --- Captured Pieces ---
+
+function offlineUpdateCaptured() {
+  if (!offlineCapturedWhiteEl || !offlineCapturedBlackEl) return;
+
+  const board = offlineChess.board();
+  const currentPieces = { w: {}, b: {} };
+  board.forEach((row) => {
+    row.forEach((sq) => {
+      if (sq) {
+        currentPieces[sq.color][sq.type] = (currentPieces[sq.color][sq.type] || 0) + 1;
+      }
+    });
+  });
+
+  const startingPieces = { p: 8, r: 2, n: 2, b: 2, q: 1, k: 1 };
+  const whitePieceSymbols = { p: "♙", r: "♖", n: "♘", b: "♗", q: "♕", k: "♔" };
+  const blackPieceSymbols = { p: "♟", r: "♜", n: "♞", b: "♝", q: "♛", k: "♚" };
+
+  const capturedWhite = [];
+  const capturedBlack = [];
+
+  for (const type in startingPieces) {
+    const wMissing = startingPieces[type] - (currentPieces.w[type] || 0);
+    const bMissing = startingPieces[type] - (currentPieces.b[type] || 0);
+    for (let i = 0; i < wMissing; i++) capturedWhite.push(whitePieceSymbols[type]);
+    for (let i = 0; i < bMissing; i++) capturedBlack.push(blackPieceSymbols[type]);
+  }
+
+  offlineCapturedBlackEl.textContent = capturedWhite.join(" ");
+  offlineCapturedWhiteEl.textContent = capturedBlack.join(" ");
+}
+
+// --- Game Over (reuse modal) ---
+
+function offlineShowGameOver(reason, winnerColor) {
+  const panel = document.getElementById("gameover-panel");
+  const quoteEl = document.getElementById("modal-quote");
+  const movesEl = document.getElementById("modal-stat-moves");
+  const durationEl = document.getElementById("modal-stat-duration");
+
+  // In offline PvP we don't have "you" vs "opponent" — just White/Black
+  const isDraw = !winnerColor;
+  const winnerName = winnerColor ? (winnerColor === "white" ? "White" : "Black") : null;
+  const loserName = winnerColor ? (winnerColor === "white" ? "Black" : "White") : null;
+
+  panel.className = "modal glass-panel gameover-modal-content " + (isDraw ? "draw" : "win");
+
+  let icon, title, message, quote;
+
+  if (reason === "checkmate") {
+    icon = "👑";
+    title = "Checkmate!";
+    message = `${winnerName} wins by checkmate! ${loserName}'s king had no escape.`;
+    quote = getRandomQuote(WIN_QUOTES);
+  } else if (reason === "stalemate") {
+    icon = "🤝";
+    title = "Stalemate";
+    message = "No legal moves available — the game is a draw!";
+    quote = getRandomQuote(DRAW_QUOTES);
+  } else if (reason === "threefold_repetition") {
+    icon = "🔄";
+    title = "Threefold Repetition";
+    message = "The same position occurred three times — draw!";
+    quote = getRandomQuote(DRAW_QUOTES);
+  } else if (reason === "insufficient_material") {
+    icon = "♟";
+    title = "Insufficient Material";
+    message = "Neither player has enough pieces to checkmate — draw!";
+    quote = getRandomQuote(DRAW_QUOTES);
+  } else if (reason === "fifty_move_rule") {
+    icon = "⏰";
+    title = "50-Move Rule";
+    message = "50 moves without a capture or pawn move — draw!";
+    quote = getRandomQuote(DRAW_QUOTES);
+  } else if (reason === "draw") {
+    icon = "🤝";
+    title = "Draw";
+    message = "The game ended in a draw.";
+    quote = getRandomQuote(DRAW_QUOTES);
+  } else if (reason === "resignation") {
+    icon = "🏳️";
+    title = `${loserName} Resigned`;
+    message = `${winnerName} wins by resignation!`;
+    quote = getRandomQuote(WIN_QUOTES);
+  } else if (reason === "timeout") {
+    icon = "⏰";
+    title = "Time's Up!";
+    message = `${loserName}'s clock ran out — ${winnerName} wins!`;
+    quote = getRandomQuote(WIN_QUOTES);
+  }
+
+  modalIcon.textContent = icon;
+  modalTitle.textContent = title;
+  modalMessage.textContent = message;
+  quoteEl.textContent = quote;
+
+  const totalMoves = offlineChess.history().length;
+  const durationSec = Math.round((Date.now() - offlineStartTime) / 1000);
+  const mins = Math.floor(durationSec / 60);
+  const secs = durationSec % 60;
+
+  movesEl.textContent = totalMoves;
+  durationEl.textContent = `${mins}:${secs.toString().padStart(2, "0")}`;
+
+  gameoverModal.style.display = "flex";
+
+  if (winnerColor) {
+    launchConfetti();
+    setTimeout(() => launchConfetti(), 1200);
+  }
+}
+
+// --- Offline Controls ---
+
+const btnOfflineNewGame = document.getElementById("btn-offline-new-game");
+const btnOfflineResign = document.getElementById("btn-offline-resign");
+const btnOfflineBackLobby = document.getElementById("btn-offline-back-lobby");
+
+if (btnOfflineNewGame) {
+  btnOfflineNewGame.addEventListener("click", () => {
+    offlineStopTimer();
+    offlineChess.reset();
+    offlineGameOver = false;
+    offlineLastMove = null;
+    offlineSelectedSquare = null;
+    offlineStartTime = Date.now();
+    offlineWhiteTime = offlineTimeControl;
+    offlineBlackTime = offlineTimeControl;
+
+    if (gameoverModal) gameoverModal.style.display = "none";
+    stopConfetti();
+    if (offlineGameStatus) offlineGameStatus.style.display = "none";
+
+    offlineRenderBoard();
+    offlineUpdateTimerDisplay();
+
+    if (offlineTimeControl > 0) offlineStartTimer();
+  });
+}
+
+if (btnOfflineResign) {
+  btnOfflineResign.addEventListener("click", () => {
+    if (offlineGameOver) return;
+    const turn = offlineChess.turn();
+    const resigningColor = turn === "w" ? "white" : "black";
+    if (confirm(`${resigningColor === "white" ? "White" : "Black"} wants to resign. Are you sure?`)) {
+      offlineGameOver = true;
+      offlineStopTimer();
+      const winnerColor = resigningColor === "white" ? "black" : "white";
+      offlineShowGameOver("resignation", winnerColor);
+    }
+  });
+}
+
+// Helper: go back to the right screen after offline game
+function offlineGoBack() {
+  offlineStopTimer();
+  offlineGameOver = true;
+  offlineGameActive = false;
+  offlineChess.reset();
+  if (gameoverModal) gameoverModal.style.display = "none";
+  stopConfetti();
+  // If user is logged in → lobby, otherwise → auth screen
+  if (currentUsername) {
+    goToLobby();
+  } else {
+    showScreen(authScreen);
+  }
+}
+
+if (btnOfflineBackLobby) {
+  btnOfflineBackLobby.addEventListener("click", () => {
+    offlineGoBack();
+  });
+}
+
+// --- Modal buttons: make them work in offline mode too ---
+
+if (btnModalRematch) {
+  // The existing listener emits socket "newGame" — add offline handling
+  btnModalRematch.addEventListener("click", () => {
+    if (offlineGameActive && offlineGameScreen && offlineGameScreen.classList.contains("active-screen")) {
+      // Offline rematch
+      offlineStopTimer();
+      offlineChess.reset();
+      offlineGameOver = false;
+      offlineLastMove = null;
+      offlineSelectedSquare = null;
+      offlineStartTime = Date.now();
+      offlineWhiteTime = offlineTimeControl;
+      offlineBlackTime = offlineTimeControl;
+
+      if (gameoverModal) gameoverModal.style.display = "none";
+      stopConfetti();
+      if (offlineGameStatus) offlineGameStatus.style.display = "none";
+
+      offlineRenderBoard();
+      offlineUpdateTimerDisplay();
+      if (offlineTimeControl > 0) offlineStartTimer();
+    }
+  });
+}
+
+if (btnModalLobby) {
+  btnModalLobby.addEventListener("click", () => {
+    if (offlineGameActive && offlineGameScreen && offlineGameScreen.classList.contains("active-screen")) {
+      offlineGoBack();
+    }
+  });
 }
 
 // ============================================================

@@ -38,6 +38,7 @@
             <div class="auth-features">
               <div class="auth-feat"><span class="auth-feat-icon">⚔️</span><span>Play with Friends</span></div>
               <div class="auth-feat"><span class="auth-feat-icon">🤖</span><span>Challenge AI</span></div>
+              <div class="auth-feat"><span class="auth-feat-icon">👥</span><span>Offline PvP</span></div>
               <div class="auth-feat"><span class="auth-feat-icon">📊</span><span>Track Your Stats</span></div>
               <div class="auth-feat"><span class="auth-feat-icon">🎨</span><span>Custom Board Themes</span></div>
             </div>
@@ -92,6 +93,33 @@
             </p>
           </div>
 
+          <!-- Offline PvP — Play without login -->
+          <div class="auth-offline-divider">
+            <span class="auth-divider-line"></span>
+            <span class="auth-divider-text">or play without account</span>
+            <span class="auth-divider-line"></span>
+          </div>
+
+          <div class="auth-offline-section glass-panel">
+            <div class="auth-offline-header">
+              <span class="auth-offline-icon">👥</span>
+              <div>
+                <h3 class="auth-offline-title">Offline PvP</h3>
+                <p class="auth-offline-desc">Play with a friend on the same device — no internet needed!</p>
+              </div>
+            </div>
+            <div class="time-picker" style="margin-top:10px; border-top: none; padding-top: 4px;">
+              <span class="time-picker-label">⏱ Time Control</span>
+              <div class="time-options">
+                <label class="time-option"><input type="radio" name="auth-offline-time" value="300" /><span class="time-badge">5 min</span></label>
+                <label class="time-option"><input type="radio" name="auth-offline-time" value="600" checked /><span class="time-badge">10 min</span></label>
+                <label class="time-option"><input type="radio" name="auth-offline-time" value="900" /><span class="time-badge">15 min</span></label>
+                <label class="time-option"><input type="radio" name="auth-offline-time" value="0" /><span class="time-badge">∞</span></label>
+              </div>
+            </div>
+            <button id="btn-auth-offline-pvp" class="btn btn-primary btn-full" style="margin-top: 12px;">⚔ Play Offline PvP</button>
+          </div>
+
           <p class="auth-footer">Developed by Aniruddh Parmar</p>
         </div>
 
@@ -126,6 +154,7 @@
           <div class="hero-features">
             <div class="hero-feat"><span class="feat-icon">⚔️</span><span>Multiplayer</span></div>
             <div class="hero-feat"><span class="feat-icon">🤖</span><span>AI Opponent</span></div>
+            <div class="hero-feat"><span class="feat-icon">👥</span><span>Offline PvP</span></div>
             <div class="hero-feat"><span class="feat-icon">📊</span><span>Track Stats</span></div>
             <div class="hero-feat"><span class="feat-icon">🎨</span><span>Board Themes</span></div>
           </div>
@@ -306,6 +335,24 @@
               </div>
             </div>
             <button id="btn-play-ai" class="btn btn-primary btn-full">Play AI</button>
+          </div>
+
+          <!-- Offline PvP Card -->
+          <div class="lobby-card glass-panel" id="card-offline-pvp">
+            <div class="lobby-card-icon">👥</div>
+            <h2 class="lobby-card-title">Offline PvP</h2>
+            <p class="lobby-card-desc">Play with a friend on the same device — no internet needed!</p>
+            <div class="time-picker">
+              <span class="time-picker-label">⏱ Time Control</span>
+              <div class="time-options">
+                <label class="time-option"><input type="radio" name="offline-time" value="300" /><span class="time-badge">5 min</span></label>
+                <label class="time-option"><input type="radio" name="offline-time" value="600" checked /><span class="time-badge">10 min</span></label>
+                <label class="time-option"><input type="radio" name="offline-time" value="900" /><span class="time-badge">15 min</span></label>
+                <label class="time-option"><input type="radio" name="offline-time" value="1800" /><span class="time-badge">30 min</span></label>
+                <label class="time-option"><input type="radio" name="offline-time" value="0" /><span class="time-badge">∞</span></label>
+              </div>
+            </div>
+            <button id="btn-offline-pvp" class="btn btn-primary btn-full">⚔ Start Offline Game</button>
           </div>
         </div>
 
@@ -508,6 +555,98 @@
 
       <!-- Footer -->
       <footer id="site-footer">
+        <p>Developed by Aniruddh Parmar</p>
+      </footer>
+    </div>
+
+    <!-- ============================================================
+         SCREEN 5: OFFLINE PvP GAME
+         ============================================================ -->
+    <div id="offline-game-screen" class="screen">
+      <header id="offline-header">
+        <div class="header-inner">
+          <div class="logo">
+            <span class="logo-icon">♔</span>
+            <span class="logo-text">ChessPlay</span>
+          </div>
+          <nav class="header-nav">
+            <span class="room-code-badge offline-badge">⚡ Offline PvP</span>
+          </nav>
+        </div>
+      </header>
+
+      <main id="offline-game-area">
+        <div class="offline-game-container">
+          <section class="offline-board-section">
+            <!-- Black player bar (top) -->
+            <div class="player-bar player-bar-top offline-player-bar" id="offline-player-top">
+              <div class="player-avatar">♚</div>
+              <div class="player-info">
+                <span class="player-name">Black</span>
+                <span class="player-status">Waiting…</span>
+              </div>
+              <div class="offline-timer" id="offline-timer-black" style="display:none;">
+                <span class="offline-timer-value">--:--</span>
+              </div>
+            </div>
+
+            <!-- Turn Indicator -->
+            <div class="offline-turn-banner" id="offline-turn-banner">
+              <span class="offline-turn-dot" id="offline-turn-dot"></span>
+              <span class="offline-turn-text" id="offline-turn-text">White's Turn</span>
+            </div>
+
+            <!-- Game Status -->
+            <div class="game-status-banner" id="offline-game-status" style="display:none;">
+              <span class="status-text" id="offline-status-text"></span>
+            </div>
+
+            <!-- Board -->
+            <div class="board-wrapper offline-board-wrapper">
+              <div class="board-coords board-coords-files">
+                <span>a</span><span>b</span><span>c</span><span>d</span><span>e</span><span>f</span><span>g</span><span>h</span>
+              </div>
+              <div class="board-coords board-coords-ranks">
+                <span>8</span><span>7</span><span>6</span><span>5</span><span>4</span><span>3</span><span>2</span><span>1</span>
+              </div>
+              <div class="chessboard offline-chessboard" id="offline-chessboard"></div>
+            </div>
+
+            <!-- White player bar (bottom) -->
+            <div class="player-bar player-bar-bottom offline-player-bar" id="offline-player-bottom">
+              <div class="player-avatar">♔</div>
+              <div class="player-info">
+                <span class="player-name">White</span>
+                <span class="player-status">Your turn</span>
+              </div>
+              <div class="offline-timer" id="offline-timer-white" style="display:none;">
+                <span class="offline-timer-value">--:--</span>
+              </div>
+            </div>
+
+            <!-- Captured Pieces -->
+            <div class="offline-captured-row">
+              <div class="offline-captured-group">
+                <span class="offline-captured-label">Captured by White:</span>
+                <span class="captured-pieces" id="offline-captured-by-white"></span>
+              </div>
+              <div class="offline-captured-group">
+                <span class="offline-captured-label">Captured by Black:</span>
+                <span class="captured-pieces" id="offline-captured-by-black"></span>
+              </div>
+            </div>
+
+            <!-- Controls -->
+            <div class="offline-controls">
+              <button class="btn btn-accent" id="btn-offline-new-game"><span>↻</span> New Game</button>
+              <button class="btn btn-danger" id="btn-offline-resign"><span>🏳️</span> Resign</button>
+              <button class="btn btn-secondary" id="btn-offline-back-lobby"><span>←</span> Leave</button>
+            </div>
+          </section>
+        </div>
+      </main>
+
+      <footer id="offline-footer">
         <p>Developed by Aniruddh Parmar</p>
       </footer>
     </div>
