@@ -249,6 +249,8 @@ function goToLobby() {
   currentRoomCode = null;
   clearErrors();
   // Reset game clock
+  stopClientTimer();
+  clientTimerValue = null;
   const clockEl = document.getElementById("game-clock");
   if (clockEl) { clockEl.style.display = "none"; clockEl.classList.remove("timer-low"); }
   const timerEl = document.getElementById("game-timer");
@@ -1058,7 +1060,57 @@ socket.on("spectatorRole", () => {
   updateMoveList();
 });
 
-// Timer display — single game clock above board
+// ============================================================
+//  SMOOTH CLIENT-SIDE TIMER (interpolated at 60fps)
+// ============================================================
+
+let clientTimerValue = null;   // current timer value in seconds
+let clientTimerAnchor = null;  // performance.now() when last synced
+let clientTimerRunning = false;
+let clientTimerRAF = null;
+
+function formatTimer(secs) {
+  if (secs <= 0) return "0:00";
+  const m = Math.floor(secs / 60);
+  const s = Math.floor(secs % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function tickClientTimer() {
+  const clockEl = document.getElementById("game-clock");
+  const timerEl = document.getElementById("game-timer");
+  if (!clockEl || !timerEl || clientTimerValue === null) {
+    clientTimerRAF = null;
+    return;
+  }
+
+  if (clientTimerRunning && clientTimerAnchor !== null) {
+    const elapsed = (performance.now() - clientTimerAnchor) / 1000;
+    const display = Math.max(0, clientTimerValue - elapsed);
+    timerEl.textContent = formatTimer(display);
+    clockEl.style.display = "flex";
+    clockEl.classList.toggle("timer-low", display <= 30);
+  }
+
+  clientTimerRAF = requestAnimationFrame(tickClientTimer);
+}
+
+function startClientTimer() {
+  clientTimerRunning = true;
+  if (!clientTimerRAF) {
+    clientTimerRAF = requestAnimationFrame(tickClientTimer);
+  }
+}
+
+function stopClientTimer() {
+  clientTimerRunning = false;
+  if (clientTimerRAF) {
+    cancelAnimationFrame(clientTimerRAF);
+    clientTimerRAF = null;
+  }
+}
+
+// Server sends authoritative time updates; we re-anchor our local timer each time
 socket.on("timerUpdate", (data) => {
   const clockEl = document.getElementById("game-clock");
   const timerEl = document.getElementById("game-timer");
@@ -1066,18 +1118,19 @@ socket.on("timerUpdate", (data) => {
 
   const secs = data.time;
 
+  // Re-anchor client timer
+  clientTimerValue = secs;
+  clientTimerAnchor = performance.now();
+
   if (secs <= 0) {
     timerEl.textContent = "0:00";
     clockEl.classList.add("timer-low");
+    stopClientTimer();
     return;
   }
 
-  const m = Math.floor(secs / 60);
-  const s = Math.floor(secs % 60);
-  timerEl.textContent = `${m}:${s.toString().padStart(2, "0")}`;
-
   clockEl.style.display = "flex";
-  clockEl.classList.toggle("timer-low", secs <= 30);
+  startClientTimer();
 });
 
 socket.on("boardState", (fen) => {
@@ -1429,6 +1482,9 @@ socket.on("gameOver", (data) => {
   // Show modal
   gameoverModal.style.display = "flex";
 
+  // Stop the client-side timer
+  stopClientTimer();
+
   // Launch confetti for wins!
   if (isWin) {
     launchConfetti();
@@ -1449,6 +1505,27 @@ socket.on("newGame", (data) => {
   updateMoveList();
   gameoverModal.style.display = "none";
   if (gameStatusBanner) gameStatusBanner.style.display = "none";
+
+  // Reset timer display for the new game
+  const clockEl = document.getElementById("game-clock");
+  const timerEl = document.getElementById("game-timer");
+  if (clockEl && timerEl) {
+    const tc = data && data.timeControl;
+    if (tc && tc > 0) {
+      clientTimerValue = tc;
+      clientTimerAnchor = performance.now();
+      timerEl.textContent = formatTimer(tc);
+      clockEl.style.display = "flex";
+      clockEl.classList.remove("timer-low");
+      startClientTimer();
+    } else {
+      // Infinite time — hide clock
+      stopClientTimer();
+      clientTimerValue = null;
+      clockEl.style.display = "none";
+      timerEl.textContent = "";
+    }
+  }
 });
 
 // Invalid move — silently ignore (piece snaps back)

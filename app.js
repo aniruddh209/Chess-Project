@@ -15,6 +15,7 @@ const mongoose = require("mongoose");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const cookieParser = require("cookie-parser");
+
 const User = require("./models/User");
 const Game = require("./models/Game");
 
@@ -305,83 +306,19 @@ async function recordGame(room) {
 }
 
 // ============================================================
-//  AI ENGINE — Minimax + Alpha-Beta + Piece-Square Tables
+//  AI ENGINE — Minimax with Alpha-Beta Pruning (inline)
 // ============================================================
 
 const PIECE_VALUES = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 20000 };
 
-// Piece-Square Tables (from white's perspective, row 0 = rank 8)
 const PST = {
-  p: [
-     0,  0,  0,  0,  0,  0,  0,  0,
-    50, 50, 50, 50, 50, 50, 50, 50,
-    10, 10, 20, 30, 30, 20, 10, 10,
-     5,  5, 10, 25, 25, 10,  5,  5,
-     0,  0,  0, 20, 20,  0,  0,  0,
-     5, -5,-10,  0,  0,-10, -5,  5,
-     5, 10, 10,-20,-20, 10, 10,  5,
-     0,  0,  0,  0,  0,  0,  0,  0,
-  ],
-  n: [
-   -50,-40,-30,-30,-30,-30,-40,-50,
-   -40,-20,  0,  0,  0,  0,-20,-40,
-   -30,  0, 10, 15, 15, 10,  0,-30,
-   -30,  5, 15, 20, 20, 15,  5,-30,
-   -30,  0, 15, 20, 20, 15,  0,-30,
-   -30,  5, 10, 15, 15, 10,  5,-30,
-   -40,-20,  0,  5,  5,  0,-20,-40,
-   -50,-40,-30,-30,-30,-30,-40,-50,
-  ],
-  b: [
-   -20,-10,-10,-10,-10,-10,-10,-20,
-   -10,  0,  0,  0,  0,  0,  0,-10,
-   -10,  0, 10, 10, 10, 10,  0,-10,
-   -10,  5,  5, 10, 10,  5,  5,-10,
-   -10,  0, 10, 10, 10, 10,  0,-10,
-   -10, 10, 10, 10, 10, 10, 10,-10,
-   -10,  5,  0,  0,  0,  0,  5,-10,
-   -20,-10,-10,-10,-10,-10,-10,-20,
-  ],
-  r: [
-     0,  0,  0,  0,  0,  0,  0,  0,
-     5, 10, 10, 10, 10, 10, 10,  5,
-    -5,  0,  0,  0,  0,  0,  0, -5,
-    -5,  0,  0,  0,  0,  0,  0, -5,
-    -5,  0,  0,  0,  0,  0,  0, -5,
-    -5,  0,  0,  0,  0,  0,  0, -5,
-    -5,  0,  0,  0,  0,  0,  0, -5,
-     0,  0,  0,  5,  5,  0,  0,  0,
-  ],
-  q: [
-   -20,-10,-10, -5, -5,-10,-10,-20,
-   -10,  0,  0,  0,  0,  0,  0,-10,
-   -10,  0,  5,  5,  5,  5,  0,-10,
-    -5,  0,  5,  5,  5,  5,  0, -5,
-     0,  0,  5,  5,  5,  5,  0, -5,
-   -10,  5,  5,  5,  5,  5,  0,-10,
-   -10,  0,  5,  0,  0,  0,  0,-10,
-   -20,-10,-10, -5, -5,-10,-10,-20,
-  ],
-  k: [ // Middlegame — stay castled, avoid center
-   -30,-40,-40,-50,-50,-40,-40,-30,
-   -30,-40,-40,-50,-50,-40,-40,-30,
-   -30,-40,-40,-50,-50,-40,-40,-30,
-   -30,-40,-40,-50,-50,-40,-40,-30,
-   -20,-30,-30,-40,-40,-30,-30,-20,
-   -10,-20,-20,-20,-20,-20,-20,-10,
-    20, 20,  0,  0,  0,  0, 20, 20,
-    20, 30, 10,  0,  0, 10, 30, 20,
-  ],
-  k_end: [ // Endgame — king should be active
-   -50,-40,-30,-20,-20,-30,-40,-50,
-   -30,-20,-10,  0,  0,-10,-20,-30,
-   -30,-10, 20, 30, 30, 20,-10,-30,
-   -30,-10, 30, 40, 40, 30,-10,-30,
-   -30,-10, 30, 40, 40, 30,-10,-30,
-   -30,-10, 20, 30, 30, 20,-10,-30,
-   -30,-30,  0,  0,  0,  0,-30,-30,
-   -50,-30,-30,-30,-30,-30,-30,-50,
-  ],
+  p: [0,0,0,0,0,0,0,0,50,50,50,50,50,50,50,50,10,10,20,30,30,20,10,10,5,5,10,25,25,10,5,5,0,0,0,20,20,0,0,0,5,-5,-10,0,0,-10,-5,5,5,10,10,-20,-20,10,10,5,0,0,0,0,0,0,0,0],
+  n: [-50,-40,-30,-30,-30,-30,-40,-50,-40,-20,0,0,0,0,-20,-40,-30,0,10,15,15,10,0,-30,-30,5,15,20,20,15,5,-30,-30,0,15,20,20,15,0,-30,-30,5,10,15,15,10,5,-30,-40,-20,0,5,5,0,-20,-40,-50,-40,-30,-30,-30,-30,-40,-50],
+  b: [-20,-10,-10,-10,-10,-10,-10,-20,-10,0,0,0,0,0,0,-10,-10,0,10,10,10,10,0,-10,-10,5,5,10,10,5,5,-10,-10,0,10,10,10,10,0,-10,-10,10,10,10,10,10,10,-10,-10,5,0,0,0,0,5,-10,-20,-10,-10,-10,-10,-10,-10,-20],
+  r: [0,0,0,0,0,0,0,0,5,10,10,10,10,10,10,5,-5,0,0,0,0,0,0,-5,-5,0,0,0,0,0,0,-5,-5,0,0,0,0,0,0,-5,-5,0,0,0,0,0,0,-5,-5,0,0,0,0,0,0,-5,0,0,0,5,5,0,0,0],
+  q: [-20,-10,-10,-5,-5,-10,-10,-20,-10,0,0,0,0,0,0,-10,-10,0,5,5,5,5,0,-10,-5,0,5,5,5,5,0,-5,0,0,5,5,5,5,0,-5,-10,5,5,5,5,5,0,-10,-10,0,5,0,0,0,0,-10,-20,-10,-10,-5,-5,-10,-10,-20],
+  k: [-30,-40,-40,-50,-50,-40,-40,-30,-30,-40,-40,-50,-50,-40,-40,-30,-30,-40,-40,-50,-50,-40,-40,-30,-30,-40,-40,-50,-50,-40,-40,-30,-20,-30,-30,-40,-40,-30,-30,-20,-10,-20,-20,-20,-20,-20,-20,-10,20,20,0,0,0,0,20,20,20,30,10,0,0,10,30,20],
+  k_end: [-50,-40,-30,-20,-20,-30,-40,-50,-30,-20,-10,0,0,-10,-20,-30,-30,-10,20,30,30,20,-10,-30,-30,-10,30,40,40,30,-10,-30,-30,-10,30,40,40,30,-10,-30,-30,-10,20,30,30,20,-10,-30,-30,-30,0,0,0,0,-30,-30,-50,-30,-30,-30,-30,-30,-30,-50],
 };
 
 function isEndgame(board) {
@@ -398,266 +335,210 @@ function isEndgame(board) {
 }
 
 function evaluateBoard(chess) {
-  if (chess.isCheckmate()) {
-    return chess.turn() === "w" ? -99999 : 99999;
-  }
+  if (chess.isCheckmate()) return chess.turn() === "w" ? -99999 : 99999;
   if (chess.isDraw() || chess.isStalemate()) return 0;
-
   let score = 0;
   const board = chess.board();
   const endgame = isEndgame(board);
-
   for (let r = 0; r < 8; r++) {
     for (let c = 0; c < 8; c++) {
       const piece = board[r][c];
       if (!piece) continue;
-
       const idx = r * 8 + c;
       const mirrorIdx = (7 - r) * 8 + c;
-
-      // Material value
       let value = PIECE_VALUES[piece.type];
-
-      // Positional value from PST
       let pstKey = piece.type;
       if (piece.type === "k" && endgame) pstKey = "k_end";
       const table = PST[pstKey];
-      if (table) {
-        value += piece.color === "w" ? table[mirrorIdx] : table[idx];
-      }
-
+      if (table) value += piece.color === "w" ? table[mirrorIdx] : table[idx];
       score += piece.color === "w" ? value : -value;
     }
   }
-
-  // Mobility bonus (lighter weight)
-  const mobility = chess.moves().length;
-  score += mobility * 2 * (chess.turn() === "w" ? 1 : -1);
-
-  // Check bonus
-  if (chess.isCheck()) {
-    score += chess.turn() === "w" ? -30 : 30;
-  }
-
+  score += chess.moves().length * 2 * (chess.turn() === "w" ? 1 : -1);
+  if (chess.isCheck()) score += chess.turn() === "w" ? -30 : 30;
   return score;
 }
 
-// Move ordering — check captures and checks first for better pruning
 function orderMoves(chess, moves) {
   return moves.sort((a, b) => {
-    let scoreA = 0, scoreB = 0;
-
-    // Captures: MVV-LVA (Most Valuable Victim - Least Valuable Aggressor)
-    if (a.captured) scoreA += PIECE_VALUES[a.captured] * 10 - PIECE_VALUES[a.piece];
-    if (b.captured) scoreB += PIECE_VALUES[b.captured] * 10 - PIECE_VALUES[b.piece];
-
-    // Promotions
-    if (a.promotion) scoreA += 800;
-    if (b.promotion) scoreB += 800;
-
-    // Checks (try the move to see if it gives check)
-    if (a.san && a.san.includes("+")) scoreA += 50;
-    if (b.san && b.san.includes("+")) scoreB += 50;
-
-    return scoreB - scoreA;
+    let sA = 0, sB = 0;
+    if (a.captured) sA += PIECE_VALUES[a.captured] * 10 - PIECE_VALUES[a.piece];
+    if (b.captured) sB += PIECE_VALUES[b.captured] * 10 - PIECE_VALUES[b.piece];
+    if (a.promotion) sA += 800; if (b.promotion) sB += 800;
+    if (a.san && a.san.includes("+")) sA += 50;
+    if (b.san && b.san.includes("+")) sB += 50;
+    return sB - sA;
   });
 }
 
-function minimax(chess, depth, alpha, beta, isMaximizing) {
-  if (depth === 0 || chess.isGameOver()) {
-    return evaluateBoard(chess);
-  }
-
+function minimax(chess, depth, alpha, beta, isMax) {
+  if (depth === 0 || chess.isGameOver()) return evaluateBoard(chess);
   const moves = chess.moves({ verbose: true });
   orderMoves(chess, moves);
-
-  if (isMaximizing) {
-    let maxEval = -Infinity;
-    for (const move of moves) {
-      chess.move(move);
-      const eval_ = minimax(chess, depth - 1, alpha, beta, false);
-      chess.undo();
-      maxEval = Math.max(maxEval, eval_);
-      alpha = Math.max(alpha, eval_);
-      if (beta <= alpha) break;
+  if (isMax) {
+    let best = -Infinity;
+    for (const m of moves) {
+      chess.move(m); best = Math.max(best, minimax(chess, depth-1, alpha, beta, false)); chess.undo();
+      alpha = Math.max(alpha, best); if (beta <= alpha) break;
     }
-    return maxEval;
+    return best;
   } else {
-    let minEval = Infinity;
-    for (const move of moves) {
-      chess.move(move);
-      const eval_ = minimax(chess, depth - 1, alpha, beta, true);
-      chess.undo();
-      minEval = Math.min(minEval, eval_);
-      beta = Math.min(beta, eval_);
-      if (beta <= alpha) break;
+    let best = Infinity;
+    for (const m of moves) {
+      chess.move(m); best = Math.min(best, minimax(chess, depth-1, alpha, beta, true)); chess.undo();
+      beta = Math.min(beta, best); if (beta <= alpha) break;
     }
-    return minEval;
+    return best;
   }
-}
-
-// Async wrapper: runs AI search in small yielding chunks so the event loop stays free
-function getAIMoveAsync(chessInstance, difficulty) {
-  return new Promise((resolve) => {
-    setImmediate(() => {
-      const result = getAIMove(chessInstance, difficulty);
-      resolve(result);
-    });
-  });
 }
 
 function getAIMove(chessInstance, difficulty) {
   const moves = chessInstance.moves({ verbose: true });
   if (moves.length === 0) return null;
-
-  // --- EASY: depth 1, makes mistakes 30% of the time ---
   if (difficulty === "easy") {
-    // 30% chance of random move (simulates blunders)
-    if (Math.random() < 0.3) {
-      return moves[Math.floor(Math.random() * moves.length)];
-    }
-    // Otherwise depth-1 search (shallow, basic)
+    if (Math.random() < 0.3) return moves[Math.floor(Math.random() * moves.length)];
     const isMax = chessInstance.turn() === "w";
-    let bestMove = moves[0];
-    let bestEval = isMax ? -Infinity : Infinity;
+    let best = moves[0], bestEval = isMax ? -Infinity : Infinity;
     const shuffled = [...moves].sort(() => Math.random() - 0.5);
-    for (const move of shuffled) {
-      chessInstance.move(move);
-      const eval_ = evaluateBoard(chessInstance);
-      chessInstance.undo();
-      if (isMax ? eval_ > bestEval : eval_ < bestEval) {
-        bestEval = eval_;
-        bestMove = move;
-      }
+    for (const m of shuffled) {
+      chessInstance.move(m); const e = evaluateBoard(chessInstance); chessInstance.undo();
+      if (isMax ? e > bestEval : e < bestEval) { bestEval = e; best = m; }
     }
-    return bestMove;
+    return best;
   }
-
-  // --- MEDIUM: depth 2 (was 3 — reduced for snappy play) ---
-  // --- HARD: depth 3 (was 4 — reduced for snappy play) ---
   const depth = difficulty === "medium" ? 2 : 3;
-  const isMaximizing = chessInstance.turn() === "w";
-
-  let bestMove = moves[0];
-  let bestEval = isMaximizing ? -Infinity : Infinity;
-
-  // Order moves for better pruning
+  const isMax = chessInstance.turn() === "w";
+  let best = moves[0], bestEval = isMax ? -Infinity : Infinity;
   orderMoves(chessInstance, moves);
-
-  // Add slight randomness to equally-evaluated moves for variety
   const candidates = [];
-
-  for (const move of moves) {
-    chessInstance.move(move);
-    const eval_ = minimax(chessInstance, depth - 1, -Infinity, Infinity, !isMaximizing);
+  for (const m of moves) {
+    chessInstance.move(m);
+    const e = minimax(chessInstance, depth-1, -Infinity, Infinity, !isMax);
     chessInstance.undo();
-
-    candidates.push({ move, eval: eval_ });
-
-    if (isMaximizing ? eval_ > bestEval : eval_ < bestEval) {
-      bestEval = eval_;
-      bestMove = move;
-    }
+    candidates.push({ move: m, eval: e });
+    if (isMax ? e > bestEval : e < bestEval) { bestEval = e; best = m; }
   }
-
-  // Among moves with similar evaluation (within 15 centipawns), pick randomly for variety
-  const threshold = 15;
-  const topMoves = candidates.filter(c =>
-    Math.abs(c.eval - bestEval) <= threshold
-  );
-
-  if (topMoves.length > 1) {
-    bestMove = topMoves[Math.floor(Math.random() * topMoves.length)].move;
-  }
-
-  return bestMove;
+  const top = candidates.filter(c => Math.abs(c.eval - bestEval) <= 15);
+  if (top.length > 1) best = top[Math.floor(Math.random() * top.length)].move;
+  return best;
 }
 
 // ============================================================
-//  TIMER SYSTEM — single shared game clock, timeout = draw
+//  HUMAN-LIKE THINKING DELAY — varies by difficulty & position
+// ============================================================
+
+function getHumanLikeDelay(difficulty, chess) {
+  const moveNum = chess.moveNumber();
+  const numLegalMoves = chess.moves().length;
+  const isCheck = chess.isCheck();
+  let baseMin, baseMax;
+
+  if (difficulty === "easy") {
+    baseMin = 400; baseMax = 1200;
+  } else if (difficulty === "medium") {
+    baseMin = 800; baseMax = 2500;
+  } else {
+    baseMin = 1200; baseMax = 3500;
+  }
+
+  // Opening moves are faster (well-known theory)
+  if (moveNum <= 6) { baseMin *= 0.5; baseMax *= 0.6; }
+  // Complex positions (many legal moves) = think longer
+  else if (numLegalMoves > 30) { baseMin *= 1.2; baseMax *= 1.3; }
+  // Check responses are faster (urgent)
+  if (isCheck) { baseMin *= 0.4; baseMax *= 0.5; }
+  // Endgame with few pieces = faster
+  if (numLegalMoves < 10) { baseMin *= 0.6; baseMax *= 0.7; }
+
+  const delay = baseMin + Math.random() * (baseMax - baseMin);
+  return Math.round(Math.max(300, Math.min(delay, 4000)));
+}
+
+// ============================================================
+//  TIMER SYSTEM — accurate game clock with drift compensation
 // ============================================================
 
 function startTimer(roomCode) {
   const room = rooms.get(roomCode);
   if (!room || room.gameOver || room.timeControl === 0) return;
-
   stopTimer(roomCode);
-  room.lastTickTime = Date.now();
-
+  room.timerAnchorTime = Date.now();
+  room.timerAnchorValue = room.gameTimer;
   room.timerInterval = setInterval(() => {
     const current = rooms.get(roomCode);
     if (!current || current.gameOver) { stopTimer(roomCode); return; }
-
-    const now = Date.now();
-    const elapsed = (now - current.lastTickTime) / 1000;
-    current.lastTickTime = now;
-    current.gameTimer -= elapsed;
-
+    const elapsed = (Date.now() - current.timerAnchorTime) / 1000;
+    current.gameTimer = Math.max(0, current.timerAnchorValue - elapsed);
     if (current.gameTimer <= 0) {
       current.gameTimer = 0;
       current.gameOver = true;
       current.gameOverReason = "timeout";
       stopTimer(roomCode);
       io.to(roomCode).emit("timerUpdate", { time: 0 });
-      io.to(roomCode).emit("gameOver", {
-        reason: "timeout",
-        winner: null,
-        winnerName: null,
-      });
+      io.to(roomCode).emit("gameOver", { reason: "timeout", winner: null, winnerName: null });
       recordGame(current);
       return;
     }
-
     io.to(roomCode).emit("timerUpdate", { time: current.gameTimer });
-  }, 1000);
+  }, 250);
 }
 
 function stopTimer(roomCode) {
   const room = rooms.get(roomCode);
   if (!room) return;
-  if (room.timerInterval) {
-    clearInterval(room.timerInterval);
-    room.timerInterval = null;
-  }
+  if (room.timerInterval) { clearInterval(room.timerInterval); room.timerInterval = null; }
 }
 
 // ============================================================
-//  AI ENGINE — fast, non-blocking AI moves
+//  AI MOVE SCHEDULING — human-like delay, non-blocking timer
 // ============================================================
 
-// Make AI move with minimal delay + async computation to never block the event loop
 function scheduleAIMove(roomCode) {
   const room = rooms.get(roomCode);
   if (!room || !room.isAI || room.gameOver) return;
-
   const aiColor = room.aiColor;
   if (room.chess.turn() !== aiColor) return;
+  if (room._aiThinking) return;
+  room._aiThinking = true;
 
-  // Short fixed delay so the move doesn't feel instant (more natural)
-  const delay = room.aiDifficulty === "easy" ? 200 : room.aiDifficulty === "medium" ? 350 : 500;
+  // Calculate the AI move immediately (fast, ~10-200ms for depth 2-3)
+  const computeStart = Date.now();
+  let aiMove;
+  try {
+    aiMove = getAIMove(room.chess, room.aiDifficulty);
+  } catch (err) {
+    console.error("AI compute error:", err);
+    room._aiThinking = false;
+    return;
+  }
+  const computeTime = Date.now() - computeStart;
 
-  setTimeout(async () => {
-    const currentRoom = rooms.get(roomCode);
-    if (!currentRoom || currentRoom.gameOver) return;
-    if (currentRoom.chess.turn() !== aiColor) return;
+  if (!aiMove) { room._aiThinking = false; return; }
 
-    // Use async wrapper so event loop stays free during computation
-    const aiMove = await getAIMoveAsync(currentRoom.chess, currentRoom.aiDifficulty);
-    if (!aiMove) return;
+  // Human-like delay: subtract actual compute time so total feels natural
+  const targetDelay = getHumanLikeDelay(room.aiDifficulty, room.chess);
+  const remainingDelay = Math.max(200, targetDelay - computeTime);
 
-    // Double-check room is still valid after async
+  // Timer keeps running during this delay (anchor-based, never blocks)
+  setTimeout(() => {
     const recheck = rooms.get(roomCode);
-    if (!recheck || recheck.gameOver) return;
+    if (!recheck || recheck.gameOver) {
+      if (recheck) recheck._aiThinking = false;
+      return;
+    }
+    recheck._aiThinking = false;
 
     const moveObj = { from: aiMove.from, to: aiMove.to, promotion: aiMove.promotion || "q" };
-    recheck.chess.move(moveObj);
+    try {
+      recheck.chess.move(moveObj);
+    } catch (e) {
+      console.error("AI move apply error:", e);
+      return;
+    }
     recheck.moveHistory.push(moveObj);
-
     io.to(roomCode).emit("move", moveObj);
-
-    // Check game over after AI move
     checkGameOver(recheck, roomCode);
-  }, delay);
+  }, remainingDelay);
 }
 
 function checkGameOver(room, roomCode) {
@@ -1003,16 +884,31 @@ io.on("connection", (uniquesocket) => {
     const room = rooms.get(roomCode);
     if (!room) return;
 
+    // Stop any existing timer
+    stopTimer(roomCode);
+
     room.chess = new Chess();
     room.gameOver = false;
     room.winner = null;
     room.gameOverReason = null;
     room.moveHistory = [];
     room.startTime = Date.now();
+    room._aiThinking = false;
 
-    io.to(roomCode).emit("newGame", { fen: room.chess.fen() });
+    // Reset game timer to the original time control
+    room.gameTimer = room.timeControl;
+    room.timerAnchorTime = null;
+    room.timerAnchorValue = null;
+
+    io.to(roomCode).emit("newGame", { fen: room.chess.fen(), timeControl: room.timeControl });
     io.to(roomCode).emit("chatSystem", "♟ New game started — Good luck!");
     console.log(`New game started in room ${roomCode}`);
+
+    // Restart timer if time control is set
+    if (room.timeControl > 0) {
+      io.to(roomCode).emit("timerUpdate", { time: room.gameTimer });
+      startTimer(roomCode);
+    }
 
     // If AI game, check if AI goes first
     if (room.isAI && room.chess.turn() === room.aiColor) {
