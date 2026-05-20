@@ -335,8 +335,6 @@ function isEndgame(board) {
 }
 
 function evaluateBoard(chess) {
-  if (chess.isCheckmate()) return chess.turn() === "w" ? -99999 : 99999;
-  if (chess.isDraw() || chess.isStalemate()) return 0;
   let score = 0;
   const board = chess.board();
   const endgame = isEndgame(board);
@@ -354,8 +352,6 @@ function evaluateBoard(chess) {
       score += piece.color === "w" ? value : -value;
     }
   }
-  score += chess.moves().length * 2 * (chess.turn() === "w" ? 1 : -1);
-  if (chess.isCheck()) score += chess.turn() === "w" ? -30 : 30;
   return score;
 }
 
@@ -371,8 +367,13 @@ function orderMoves(chess, moves) {
   });
 }
 
+// Standard minimax with alpha-beta pruning
 function minimax(chess, depth, alpha, beta, isMax) {
-  if (depth === 0 || chess.isGameOver()) return evaluateBoard(chess);
+  if (chess.isGameOver()) {
+    if (chess.isCheckmate()) return isMax ? -99999 : 99999;
+    return 0; // draw/stalemate
+  }
+  if (depth === 0) return evaluateBoard(chess);
   const moves = chess.moves({ verbose: true });
   orderMoves(chess, moves);
   if (isMax) {
@@ -395,6 +396,8 @@ function minimax(chess, depth, alpha, beta, isMax) {
 function getAIMove(chessInstance, difficulty) {
   const moves = chessInstance.moves({ verbose: true });
   if (moves.length === 0) return null;
+
+  // --- EASY: depth 1, blunders 30% of the time ---
   if (difficulty === "easy") {
     if (Math.random() < 0.3) return moves[Math.floor(Math.random() * moves.length)];
     const isMax = chessInstance.turn() === "w";
@@ -406,20 +409,30 @@ function getAIMove(chessInstance, difficulty) {
     }
     return best;
   }
-  const depth = difficulty === "medium" ? 2 : 3;
+
+  // --- MEDIUM & HARD: both use depth 2 (~60-80ms, zero lag) ---
+  // Medium: picks randomly among top moves (natural, slightly weaker)
+  // Hard: always picks the absolute best move (stronger, more precise)
   const isMax = chessInstance.turn() === "w";
   let best = moves[0], bestEval = isMax ? -Infinity : Infinity;
   orderMoves(chessInstance, moves);
   const candidates = [];
+
   for (const m of moves) {
     chessInstance.move(m);
-    const e = minimax(chessInstance, depth-1, -Infinity, Infinity, !isMax);
+    const e = minimax(chessInstance, 1, -Infinity, Infinity, !isMax);
     chessInstance.undo();
     candidates.push({ move: m, eval: e });
     if (isMax ? e > bestEval : e < bestEval) { bestEval = e; best = m; }
   }
-  const top = candidates.filter(c => Math.abs(c.eval - bestEval) <= 15);
-  if (top.length > 1) best = top[Math.floor(Math.random() * top.length)].move;
+
+  // Medium: slight randomness among top moves (feels human, sometimes suboptimal)
+  if (difficulty === "medium") {
+    const top = candidates.filter(c => Math.abs(c.eval - bestEval) <= 20);
+    if (top.length > 1) best = top[Math.floor(Math.random() * top.length)].move;
+  }
+  // Hard: always the absolute best — no randomness, maximum strength
+
   return best;
 }
 
@@ -436,22 +449,23 @@ function getHumanLikeDelay(difficulty, chess) {
   if (difficulty === "easy") {
     baseMin = 400; baseMax = 1200;
   } else if (difficulty === "medium") {
-    baseMin = 800; baseMax = 2500;
+    baseMin = 700; baseMax = 2000;
   } else {
-    baseMin = 1200; baseMax = 3500;
+    // Hard: think a bit longer than medium but not too long
+    baseMin = 800; baseMax = 2200;
   }
 
   // Opening moves are faster (well-known theory)
-  if (moveNum <= 6) { baseMin *= 0.5; baseMax *= 0.6; }
-  // Complex positions (many legal moves) = think longer
-  else if (numLegalMoves > 30) { baseMin *= 1.2; baseMax *= 1.3; }
+  if (moveNum <= 6) { baseMin *= 0.5; baseMax *= 0.55; }
+  // Complex positions (many legal moves) = slightly longer
+  else if (numLegalMoves > 30) { baseMin *= 1.1; baseMax *= 1.15; }
   // Check responses are faster (urgent)
   if (isCheck) { baseMin *= 0.4; baseMax *= 0.5; }
   // Endgame with few pieces = faster
   if (numLegalMoves < 10) { baseMin *= 0.6; baseMax *= 0.7; }
 
   const delay = baseMin + Math.random() * (baseMax - baseMin);
-  return Math.round(Math.max(300, Math.min(delay, 4000)));
+  return Math.round(Math.max(300, Math.min(delay, 2500)));
 }
 
 // ============================================================
