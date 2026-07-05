@@ -119,6 +119,17 @@ function showScreen(screen) {
   });
   // Show target screen
   screen.classList.add("active-screen");
+
+  // App Install/Download Popup: ONLY on Login or Signup (authScreen)
+  const pwaPopup = document.getElementById("pwa-install-popup");
+  if (pwaPopup) {
+    const isDismissed = localStorage.getItem("pwa-install-dismissed") === "true";
+    if (screen === authScreen && isMobile() && !isDismissed && deferredPrompt) {
+      pwaPopup.style.display = "block";
+    } else {
+      pwaPopup.style.display = "none";
+    }
+  }
 }
 
 // ============================================================
@@ -320,6 +331,43 @@ if (btnProfile) {
       const fill = document.getElementById("winrate-fill");
       fill.style.width = wp + "%";
       fill.textContent = wp + "%";
+
+      // Render Streak data
+      document.getElementById("streak-current").textContent = data.streak.current;
+      document.getElementById("streak-best").textContent = data.streak.best;
+      
+      const streakRow = document.getElementById("streak-days-row");
+      if (streakRow) {
+        streakRow.innerHTML = data.streak.weeklyActivity.map(act => {
+          return `<div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+            <span style="font-size: 10px; color: var(--text-muted); font-weight: 500;">${act.day.substring(0, 1)}</span>
+            <span style="font-size: 14px;">${act.active ? "🔥" : "⚪"}</span>
+          </div>`;
+        }).join("");
+      }
+
+      // Render Color Performance data
+      document.getElementById("white-record").textContent = `${data.colorPerf.white.wins}W - ${data.colorPerf.white.losses}L - ${data.colorPerf.white.draws}D`;
+      document.getElementById("white-total").textContent = data.colorPerf.white.total;
+      
+      document.getElementById("black-record").textContent = `${data.colorPerf.black.wins}W - ${data.colorPerf.black.losses}L - ${data.colorPerf.black.draws}D`;
+      document.getElementById("black-total").textContent = data.colorPerf.black.total;
+
+      // Render Metrics
+      document.getElementById("metric-avg-moves").textContent = data.metrics.avgMoves;
+      const avgMins = Math.floor(data.metrics.avgDuration / 60);
+      const avgSecs = data.metrics.avgDuration % 60;
+      document.getElementById("metric-avg-duration").textContent = `${avgMins}m ${avgSecs}s`;
+
+      // Render Time Control breakdown
+      document.getElementById("tc-bullet-record").textContent = `${data.timeControlStats.bullet.wins} - ${data.timeControlStats.bullet.losses} - ${data.timeControlStats.bullet.draws}`;
+      document.getElementById("tc-bullet-total").textContent = data.timeControlStats.bullet.total;
+      
+      document.getElementById("tc-blitz-record").textContent = `${data.timeControlStats.blitz.wins} - ${data.timeControlStats.blitz.losses} - ${data.timeControlStats.blitz.draws}`;
+      document.getElementById("tc-blitz-total").textContent = data.timeControlStats.blitz.total;
+      
+      document.getElementById("tc-rapid-record").textContent = `${data.timeControlStats.rapid.wins} - ${data.timeControlStats.rapid.losses} - ${data.timeControlStats.rapid.draws}`;
+      document.getElementById("tc-rapid-total").textContent = data.timeControlStats.rapid.total;
 
       // Recent games
       const recentEl = document.getElementById("recent-games");
@@ -652,23 +700,167 @@ function animateMove(fromRow, fromCol, toRow, toCol, callback) {
   setTimeout(done, 220); // tight fallback
 }
 
+function createPieceDOM(square, rowindex, squareindex) {
+  const pieceElement = document.createElement("div");
+  pieceElement.classList.add("piece", square.color === "w" ? "white" : "black");
+  
+  const img = document.createElement("img");
+  img.src = getPieceImageUrl(square);
+  img.alt = getPieceUnicode(square);
+  img.classList.add("piece-img");
+  img.setAttribute("data-type", square.type);
+  img.draggable = false;
+  pieceElement.appendChild(img);
+  
+  pieceElement.draggable = PlayerRole === square.color;
+  if (pieceElement.draggable) {
+    pieceElement.classList.add("draggable");
+  }
+  
+  // Drag events
+  pieceElement.addEventListener("dragstart", (e) => {
+    if (pieceElement.draggable) {
+      clearSelection();
+      draggedPiece = pieceElement;
+      sourceSquare = { row: rowindex, col: squareindex };
+      e.dataTransfer.setData("text/plain", "");
+      if (img.complete) {
+        e.dataTransfer.setDragImage(img, img.width / 2, img.height / 2);
+      }
+      setTimeout(() => {
+        pieceElement.classList.add("dragging");
+      }, 0);
+    }
+  });
+  pieceElement.addEventListener("dragend", () => {
+    if (draggedPiece) {
+      draggedPiece.classList.remove("dragging");
+    }
+    draggedPiece = null;
+    sourceSquare = null;
+  });
+  
+  return pieceElement;
+}
+
+function handleSquareClick(rowindex, squareindex, squareElement) {
+  const board = chess.board();
+  const square = board[rowindex][squareindex];
+
+  if (selectedSquare) {
+    // Second click — try to move
+    const targetRow = rowindex;
+    const targetCol = squareindex;
+
+    if (targetRow === selectedSquare.row && targetCol === selectedSquare.col) {
+      // Clicked same square — deselect
+      clearSelection();
+      return;
+    }
+
+    // Check if this is a legal move
+    const moves = getLegalMovesFrom(selectedSquare.row, selectedSquare.col);
+    const targetAlg = `${String.fromCharCode(97 + targetCol)}${8 - targetRow}`;
+    const isLegal = moves.some((m) => m.to === targetAlg);
+
+    if (isLegal) {
+      handleMove(selectedSquare, { row: targetRow, col: targetCol });
+      clearSelection();
+    } else if (square && square.color === PlayerRole) {
+      // Clicked own piece — select it instead
+      clearSelection();
+      selectedSquare = { row: rowindex, col: squareindex };
+      squareElement.classList.add("selected");
+      showLegalMoves(rowindex, squareindex);
+    } else {
+      clearSelection();
+    }
+  } else {
+    // First click — select piece
+    if (square && square.color === PlayerRole) {
+      clearSelection();
+      selectedSquare = { row: rowindex, col: squareindex };
+      squareElement.classList.add("selected");
+      showLegalMoves(rowindex, squareindex);
+    }
+  }
+}
+
 const renderBoard = (() => {
   let renderQueued = false;
+  
   const doRender = () => {
     renderQueued = false;
     const board = chess.board();
-    const fragment = document.createDocumentFragment();
-    board.forEach((row, rowindex) => {
-      row.forEach((square, squareindex) => {
-        const squareElement = document.createElement("div");
-        squareElement.classList.add(
-          "square",
-          (rowindex + squareindex) % 2 == 0 ? "light" : "dark",
-        );
-        squareElement.dataset.row = rowindex;
-        squareElement.dataset.col = squareindex;
-
-      // Last move highlighting
+    
+    // Ensure 64 square elements exist in the board container
+    let squares = boardElement.querySelectorAll(".square");
+    const isFlipped = PlayerRole === "b";
+    
+    if (squares.length !== 64) {
+      // Re-create squares if not initialized
+      boardElement.innerHTML = "";
+      const fragment = document.createDocumentFragment();
+      for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+          const squareElement = document.createElement("div");
+          squareElement.classList.add("square");
+          squareElement.dataset.row = r;
+          squareElement.dataset.col = c;
+          
+          // Click-to-move
+          squareElement.addEventListener("click", () => {
+            if (!PlayerRole || PlayerRole !== chess.turn()) return;
+            const row = parseInt(squareElement.dataset.row);
+            const col = parseInt(squareElement.dataset.col);
+            handleSquareClick(row, col, squareElement);
+          });
+          
+          // Drag over/leave/drop events on squares
+          squareElement.addEventListener("dragover", (e) => {
+            e.preventDefault();
+            squareElement.classList.add("drop-target");
+          });
+          squareElement.addEventListener("dragleave", () => {
+            squareElement.classList.remove("drop-target");
+          });
+          squareElement.addEventListener("drop", (e) => {
+            e.preventDefault();
+            squareElement.classList.remove("drop-target");
+            clearSelection();
+            if (draggedPiece) {
+              const targetSource = {
+                row: parseInt(squareElement.dataset.row),
+                col: parseInt(squareElement.dataset.col),
+              };
+              handleMove(sourceSquare, targetSource);
+            }
+          });
+          
+          fragment.appendChild(squareElement);
+        }
+      }
+      boardElement.appendChild(fragment);
+      squares = boardElement.querySelectorAll(".square");
+    }
+    
+    // Set board flipped class
+    if (isFlipped) {
+      boardElement.classList.add("flipped");
+    } else {
+      boardElement.classList.remove("flipped");
+    }
+    
+    // Update individual squares
+    squares.forEach((squareElement) => {
+      const rowindex = parseInt(squareElement.dataset.row);
+      const squareindex = parseInt(squareElement.dataset.col);
+      const square = board[rowindex][squareindex];
+      
+      // Update light/dark classes and state classes
+      squareElement.className = "square " + ((rowindex + squareindex) % 2 === 0 ? "light" : "dark");
+      
+      // Re-apply highlights/checks
       if (lastMove) {
         if (
           (rowindex === lastMove.from.row && squareindex === lastMove.from.col) ||
@@ -677,8 +869,11 @@ const renderBoard = (() => {
           squareElement.classList.add("highlight");
         }
       }
-
-      // King in check / checkmate highlighting
+      
+      if (selectedSquare && rowindex === selectedSquare.row && squareindex === selectedSquare.col) {
+        squareElement.classList.add("selected");
+      }
+      
       if (square && square.type === "k") {
         if (chess.isCheckmate() && chess.turn() === square.color) {
           squareElement.classList.add("king-checkmate");
@@ -686,133 +881,41 @@ const renderBoard = (() => {
           squareElement.classList.add("king-in-check");
         }
       }
-
-      if (square) {
-        const pieceElement = document.createElement("div");
-        pieceElement.classList.add(
-          "piece",
-          square.color == "w" ? "white" : "black",
-        );
-
-        const img = document.createElement("img");
-        img.src = getPieceImageUrl(square);
-        img.alt = getPieceUnicode(square);
-        img.classList.add("piece-img");
-        img.draggable = false;
-        pieceElement.appendChild(img);
-
-        pieceElement.draggable = PlayerRole === square.color;
-
-        if (pieceElement.draggable) {
-          pieceElement.classList.add("draggable");
+      
+      // Reuse piece elements
+      let pieceElement = squareElement.querySelector(".piece");
+      
+      if (!square) {
+        if (pieceElement) {
+          pieceElement.remove();
         }
-
-        // Drag events
-        pieceElement.addEventListener("dragstart", (e) => {
-          if (pieceElement.draggable) {
-            clearSelection();
-            draggedPiece = pieceElement;
-            sourceSquare = { row: rowindex, col: squareindex };
-            e.dataTransfer.setData("text/plain", "");
-            if (img.complete) {
-              e.dataTransfer.setDragImage(img, img.width / 2, img.height / 2);
-            }
-            setTimeout(() => {
-              pieceElement.classList.add("dragging");
-            }, 0);
-          }
-        });
-        pieceElement.addEventListener("dragend", () => {
-          if (draggedPiece) {
-            draggedPiece.classList.remove("dragging");
-          }
-          draggedPiece = null;
-          sourceSquare = null;
-        });
-        squareElement.appendChild(pieceElement);
-      }
-
-      // Click-to-move
-      squareElement.addEventListener("click", () => {
-        if (!PlayerRole || PlayerRole !== chess.turn()) return;
-
-        if (selectedSquare) {
-          // Second click — try to move
-          const targetRow = rowindex;
-          const targetCol = squareindex;
-
-          if (targetRow === selectedSquare.row && targetCol === selectedSquare.col) {
-            // Clicked same square — deselect
-            clearSelection();
-            return;
-          }
-
-          // Check if this is a legal move
-          const moves = getLegalMovesFrom(selectedSquare.row, selectedSquare.col);
-          const targetAlg = `${String.fromCharCode(97 + targetCol)}${8 - targetRow}`;
-          const isLegal = moves.some((m) => m.to === targetAlg);
-
-          if (isLegal) {
-            handleMove(selectedSquare, { row: targetRow, col: targetCol });
-            clearSelection();
-          } else if (square && square.color === PlayerRole) {
-            // Clicked own piece — select it instead
-            clearSelection();
-            selectedSquare = { row: rowindex, col: squareindex };
-            squareElement.classList.add("selected");
-            showLegalMoves(rowindex, squareindex);
+      } else {
+        const pieceColor = square.color === "w" ? "white" : "black";
+        
+        if (pieceElement) {
+          const img = pieceElement.querySelector(".piece-img");
+          // If color or type is different, replace it
+          if (!pieceElement.classList.contains(pieceColor) || (img && img.getAttribute("data-type") !== square.type)) {
+            pieceElement.remove();
+            pieceElement = createPieceDOM(square, rowindex, squareindex);
+            squareElement.appendChild(pieceElement);
           } else {
-            clearSelection();
+            // Update draggability
+            pieceElement.draggable = PlayerRole === square.color;
+            pieceElement.classList.toggle("draggable", pieceElement.draggable);
           }
         } else {
-          // First click — select piece
-          if (square && square.color === PlayerRole) {
-            clearSelection();
-            selectedSquare = { row: rowindex, col: squareindex };
-            squareElement.classList.add("selected");
-            showLegalMoves(rowindex, squareindex);
-          }
+          pieceElement = createPieceDOM(square, rowindex, squareindex);
+          squareElement.appendChild(pieceElement);
         }
-      });
-
-      // Drag events on squares
-      squareElement.addEventListener("dragover", (e) => {
-        e.preventDefault();
-        squareElement.classList.add("drop-target");
-      });
-
-      squareElement.addEventListener("dragleave", () => {
-        squareElement.classList.remove("drop-target");
-      });
-
-      squareElement.addEventListener("drop", (e) => {
-        e.preventDefault();
-        squareElement.classList.remove("drop-target");
-        clearSelection();
-        if (draggedPiece) {
-          const targetSource = {
-            row: parseInt(squareElement.dataset.row),
-            col: parseInt(squareElement.dataset.col),
-          };
-          handleMove(sourceSquare, targetSource);
-        }
-      });
-      fragment.appendChild(squareElement);
+      }
     });
-  });
-  boardElement.innerHTML = "";
-  boardElement.appendChild(fragment);
-  if (PlayerRole === "b") {
-    boardElement.classList.add("flipped");
-  } else {
-    boardElement.classList.remove("flipped");
-  }
-
-  updatePlayerBars();
-  updateGameStatus();
-  updateCapturedPieces();
+    
+    updatePlayerBars();
+    updateGameStatus();
+    updateCapturedPieces();
   };
-  // Debounced render: coalesce multiple rapid calls into one paint
+  
   return () => {
     if (renderQueued) return;
     renderQueued = true;
@@ -2010,9 +2113,39 @@ if (btnResign) {
   });
 }
 
-// Leave game — back to lobby
+const leaveConfirmModal = document.getElementById("leave-confirm-modal");
+const btnLeaveCancel = document.getElementById("btn-leave-cancel");
+const btnLeaveConfirm = document.getElementById("btn-leave-confirm");
+
+const newGameRequestModal = document.getElementById("newgame-request-modal");
+const newGameRequestMessage = document.getElementById("newgame-request-message");
+const btnNewGameDecline = document.getElementById("btn-newgame-decline");
+const btnNewGameAccept = document.getElementById("btn-newgame-accept");
+
+// Leave game modal triggers
 if (btnLeaveGame) {
   btnLeaveGame.addEventListener("click", () => {
+    if (currentRoomCode) {
+      leaveConfirmModal.style.display = "flex";
+    } else {
+      socket.emit("leaveRoom");
+      chess.reset();
+      gameoverModal.style.display = "none";
+      clearChat();
+      goToLobby();
+    }
+  });
+}
+
+if (btnLeaveCancel) {
+  btnLeaveCancel.addEventListener("click", () => {
+    leaveConfirmModal.style.display = "none";
+  });
+}
+
+if (btnLeaveConfirm) {
+  btnLeaveConfirm.addEventListener("click", () => {
+    leaveConfirmModal.style.display = "none";
     socket.emit("leaveRoom");
     chess.reset();
     gameoverModal.style.display = "none";
@@ -2021,36 +2154,113 @@ if (btnLeaveGame) {
   });
 }
 
-// Modal — Back to Lobby / New Game
+// Rematch request / New Game button in gameover modal
 if (btnModalLobby) {
   btnModalLobby.addEventListener("click", () => {
-    // If we're in offline mode, handle offline back
     if (offlineGameActive && offlineGameScreen && offlineGameScreen.classList.contains("active-screen")) {
       offlineGoBack();
       return;
     }
-    socket.emit("leaveRoom");
-    chess.reset();
-    gameoverModal.style.display = "none";
-    stopConfetti();
-    clearChat();
-    goToLobby();
+    
+    if (currentRoomCode) {
+      // Multiplayer mode: request rematch, don't leave room
+      btnModalLobby.disabled = true;
+      btnModalLobby.textContent = "Waiting for Opponent...";
+      socket.emit("requestNewGame");
+    } else {
+      // Just go back to lobby
+      socket.emit("leaveRoom");
+      chess.reset();
+      gameoverModal.style.display = "none";
+      stopConfetti();
+      clearChat();
+      goToLobby();
+    }
   });
 }
+
+// Rematch request option buttons
+if (btnNewGameDecline) {
+  btnNewGameDecline.addEventListener("click", () => {
+    newGameRequestModal.style.display = "none";
+    socket.emit("declineNewGame");
+  });
+}
+
+if (btnNewGameAccept) {
+  btnNewGameAccept.addEventListener("click", () => {
+    newGameRequestModal.style.display = "none";
+    socket.emit("acceptNewGame");
+  });
+}
+
+// Socket handlers for rematch/new game request
+socket.on("newGameRequested", (data) => {
+  if (newGameRequestMessage) {
+    newGameRequestMessage.textContent = `${data.requester} wants to start a new game.`;
+  }
+  newGameRequestModal.style.display = "flex";
+});
+
+socket.on("newGameDeclined", () => {
+  btnModalLobby.disabled = false;
+  btnModalLobby.textContent = "← New Game";
+  alert("Opponent declined the rematch request.");
+});
+
+socket.on("newGameStarted", (data) => {
+  // Re-enable and reset rematch buttons
+  btnModalLobby.disabled = false;
+  btnModalLobby.textContent = "← New Game";
+  
+  // Reset modals
+  gameoverModal.style.display = "none";
+  newGameRequestModal.style.display = "none";
+  leaveConfirmModal.style.display = "none";
+  stopConfetti();
+  
+  // Clear visual highlights and reset engine
+  chess.load(data.fen);
+  lastMove = null;
+  lastSentMove = null;
+  
+  // Reset local state clocks & moves lists
+  const movesContainer = document.getElementById("moves-container");
+  if (movesContainer) movesContainer.innerHTML = "";
+  
+  // Redraw
+  renderBoard();
+  
+  // Resync chat logs
+  clearChat();
+  addChatMessage("system", "Game restarted!");
+});
 
 // ============================================================
 //  BOARD THEME SELECTOR — Dashboard only
 // ============================================================
 
 function applyBoardTheme(theme) {
-  if (!boardElement) return;
-  boardElement.classList.remove(
-    "theme-classic", "theme-emerald", "theme-ice",
-    "theme-tournament", "theme-marble", "theme-walnut"
-  );
-  if (theme && theme !== "classic") {
-    boardElement.classList.add(`theme-${theme}`);
+  const themeClasses = [
+    "theme-classic", "theme-tournament", "theme-ocean", "theme-midnight",
+    "theme-royal", "theme-graphite", "theme-emerald", "theme-rosewood",
+    "theme-sandstone", "theme-contrast"
+  ];
+  
+  if (boardElement) {
+    boardElement.classList.remove(...themeClasses);
+    if (theme && theme !== "classic") {
+      boardElement.classList.add(`theme-${theme}`);
+    }
   }
+  
+  if (offlineBoardEl) {
+    offlineBoardEl.classList.remove(...themeClasses);
+    if (theme && theme !== "classic") {
+      offlineBoardEl.classList.add(`theme-${theme}`);
+    }
+  }
+  
   localStorage.setItem("chess-board-theme", theme);
   const radio = document.querySelector(`input[name="board-theme"][value="${theme}"]`);
   if (radio) radio.checked = true;
@@ -2067,6 +2277,64 @@ themeRadios.forEach((radio) => {
 // Load saved theme on startup
 const savedTheme = localStorage.getItem("chess-board-theme") || "classic";
 applyBoardTheme(savedTheme);
+
+// ============================================================
+//  APP THEME SELECTOR (Light/Dark/System)
+// ============================================================
+
+function applyAppTheme(theme) {
+  const body = document.body;
+  const btns = document.querySelectorAll(".app-theme-btn");
+  
+  // Remove existing active states
+  btns.forEach(btn => {
+    btn.classList.remove("btn-primary");
+    btn.classList.add("btn-secondary");
+  });
+  
+  // Set active class on selection
+  const activeBtn = document.querySelector(`.app-theme-btn[data-theme="${theme}"]`);
+  if (activeBtn) {
+    activeBtn.classList.remove("btn-secondary");
+    activeBtn.classList.add("btn-primary");
+  }
+
+  localStorage.setItem("chess-app-theme", theme);
+
+  if (theme === "light") {
+    body.classList.add("light-theme");
+  } else if (theme === "dark") {
+    body.classList.remove("light-theme");
+  } else {
+    // System preference
+    const systemPrefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    if (systemPrefersDark) {
+      body.classList.remove("light-theme");
+    } else {
+      body.classList.add("light-theme");
+    }
+  }
+}
+
+// Event listeners for App Theme buttons
+const appThemeBtns = document.querySelectorAll(".app-theme-btn");
+appThemeBtns.forEach((btn) => {
+  btn.addEventListener("click", () => {
+    applyAppTheme(btn.getAttribute("data-theme"));
+  });
+});
+
+// Listen to system theme changes
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+  const currentTheme = localStorage.getItem("chess-app-theme") || "system";
+  if (currentTheme === "system") {
+    applyAppTheme("system");
+  }
+});
+
+// Load saved app theme on startup
+const savedAppTheme = localStorage.getItem("chess-app-theme") || "system";
+applyAppTheme(savedAppTheme);
 
 // ============================================================
 //  AUTO-LOGIN: Check for existing session cookie
@@ -2290,157 +2558,207 @@ function offlineShowLegalMoves(row, col) {
   });
 }
 
+function createOfflinePieceDOM(square, rowindex, squareindex) {
+  const pieceElement = document.createElement("div");
+  pieceElement.classList.add("piece", square.color === "w" ? "white" : "black");
+  
+  const img = document.createElement("img");
+  img.src = getPieceImageUrl(square);
+  img.alt = getPieceUnicode(square);
+  img.classList.add("piece-img");
+  img.setAttribute("data-type", square.type);
+  img.draggable = false;
+  pieceElement.appendChild(img);
+  
+  const isMyTurn = offlineChess.turn() === square.color && !offlineGameOver;
+  pieceElement.draggable = isMyTurn;
+  if (isMyTurn) {
+    pieceElement.classList.add("draggable");
+  }
+  
+  // Drag events
+  pieceElement.addEventListener("dragstart", (e) => {
+    if (!pieceElement.draggable) return;
+    offlineClearSelection();
+    offlineDraggedPiece = pieceElement;
+    offlineSourceSquare = { row: rowindex, col: squareindex };
+    e.dataTransfer.setData("text/plain", "");
+    if (img.complete) {
+      e.dataTransfer.setDragImage(img, img.width / 2, img.height / 2);
+    }
+    setTimeout(() => pieceElement.classList.add("dragging"), 0);
+  });
+  
+  pieceElement.addEventListener("dragend", () => {
+    if (offlineDraggedPiece) offlineDraggedPiece.classList.remove("dragging");
+    offlineDraggedPiece = null;
+    offlineSourceSquare = null;
+  });
+  
+  return pieceElement;
+}
+
+function handleOfflineSquareClick(rowindex, squareindex, squareElement) {
+  if (offlineGameOver) return;
+  const currentTurn = offlineChess.turn();
+
+  if (offlineSelectedSquare) {
+    const targetRow = rowindex;
+    const targetCol = squareindex;
+
+    if (targetRow === offlineSelectedSquare.row && targetCol === offlineSelectedSquare.col) {
+      offlineClearSelection();
+      return;
+    }
+
+    const moves = offlineGetLegalMoves(offlineSelectedSquare.row, offlineSelectedSquare.col);
+    const targetAlg = `${String.fromCharCode(97 + targetCol)}${8 - targetRow}`;
+    const isLegal = moves.some((m) => m.to === targetAlg);
+
+    if (isLegal) {
+      offlineHandleMove(offlineSelectedSquare, { row: targetRow, col: targetCol });
+      offlineClearSelection();
+    } else {
+      const board = offlineChess.board();
+      const square = board[targetRow][targetCol];
+      if (square && square.color === currentTurn) {
+        offlineClearSelection();
+        offlineSelectedSquare = { row: rowindex, col: squareindex };
+        squareElement.classList.add("selected");
+        offlineShowLegalMoves(rowindex, squareindex);
+      } else {
+        offlineClearSelection();
+      }
+    }
+  } else {
+    const board = offlineChess.board();
+    const square = board[rowindex][squareindex];
+    if (square && square.color === currentTurn) {
+      offlineClearSelection();
+      offlineSelectedSquare = { row: rowindex, col: squareindex };
+      squareElement.classList.add("selected");
+      offlineShowLegalMoves(rowindex, squareindex);
+    }
+  }
+}
+
 function offlineRenderBoard() {
   if (!offlineBoardEl) return;
   const board = offlineChess.board();
-  const fragment = document.createDocumentFragment();
-
-  board.forEach((row, rowindex) => {
-    row.forEach((square, squareindex) => {
-      const squareElement = document.createElement("div");
-      squareElement.classList.add(
-        "square",
-        (rowindex + squareindex) % 2 === 0 ? "light" : "dark"
-      );
-      squareElement.dataset.row = rowindex;
-      squareElement.dataset.col = squareindex;
-
-      // Last move highlighting
-      if (offlineLastMove) {
-        if (
-          (rowindex === offlineLastMove.from.row && squareindex === offlineLastMove.from.col) ||
-          (rowindex === offlineLastMove.to.row && squareindex === offlineLastMove.to.col)
-        ) {
-          squareElement.classList.add("highlight");
-        }
-      }
-
-      // King in check / checkmate highlighting
-      if (square && square.type === "k") {
-        if (offlineChess.isCheckmate() && offlineChess.turn() === square.color) {
-          squareElement.classList.add("king-checkmate");
-        } else if (offlineChess.isCheck() && offlineChess.turn() === square.color) {
-          squareElement.classList.add("king-in-check");
-        }
-      }
-
-      if (square) {
-        const pieceElement = document.createElement("div");
-        pieceElement.classList.add("piece", square.color === "w" ? "white" : "black");
-
-        const img = document.createElement("img");
-        img.src = getPieceImageUrl(square);
-        img.alt = getPieceUnicode(square);
-        img.classList.add("piece-img");
-        img.draggable = false;
-        pieceElement.appendChild(img);
-
-        // In offline mode, both colors are draggable on their turn
-        const isMyTurn = offlineChess.turn() === square.color && !offlineGameOver;
-        pieceElement.draggable = isMyTurn;
-        if (isMyTurn) pieceElement.classList.add("draggable");
-
-        // Drag events
-        pieceElement.addEventListener("dragstart", (e) => {
-          if (!pieceElement.draggable) return;
+  
+  let squares = offlineBoardEl.querySelectorAll(".square");
+  
+  if (squares.length !== 64) {
+    offlineBoardEl.innerHTML = "";
+    const fragment = document.createDocumentFragment();
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        const squareElement = document.createElement("div");
+        squareElement.classList.add("square");
+        squareElement.dataset.row = r;
+        squareElement.dataset.col = c;
+        
+        // Click-to-move
+        squareElement.addEventListener("click", () => {
+          const row = parseInt(squareElement.dataset.row);
+          const col = parseInt(squareElement.dataset.col);
+          handleOfflineSquareClick(row, col, squareElement);
+        });
+        
+        // Drag over/leave/drop events on squares
+        squareElement.addEventListener("dragover", (e) => {
+          e.preventDefault();
+          squareElement.classList.add("drop-target");
+        });
+        squareElement.addEventListener("dragleave", () => {
+          squareElement.classList.remove("drop-target");
+        });
+        squareElement.addEventListener("drop", (e) => {
+          e.preventDefault();
+          squareElement.classList.remove("drop-target");
           offlineClearSelection();
-          offlineDraggedPiece = pieceElement;
-          offlineSourceSquare = { row: rowindex, col: squareindex };
-          e.dataTransfer.setData("text/plain", "");
-          if (img.complete) {
-            e.dataTransfer.setDragImage(img, img.width / 2, img.height / 2);
+          if (offlineDraggedPiece) {
+            const targetSource = {
+              row: parseInt(squareElement.dataset.row),
+              col: parseInt(squareElement.dataset.col),
+            };
+            offlineHandleMove(offlineSourceSquare, targetSource);
           }
-          setTimeout(() => pieceElement.classList.add("dragging"), 0);
         });
-
-        pieceElement.addEventListener("dragend", () => {
-          if (offlineDraggedPiece) offlineDraggedPiece.classList.remove("dragging");
-          offlineDraggedPiece = null;
-          offlineSourceSquare = null;
-        });
-
+        
+        fragment.appendChild(squareElement);
+      }
+    }
+    offlineBoardEl.appendChild(fragment);
+    squares = offlineBoardEl.querySelectorAll(".square");
+  }
+  
+  // No flip in offline mode
+  offlineBoardEl.classList.remove("flipped");
+  
+  squares.forEach((squareElement) => {
+    const rowindex = parseInt(squareElement.dataset.row);
+    const squareindex = parseInt(squareElement.dataset.col);
+    const square = board[rowindex][squareindex];
+    
+    // Update light/dark classes and state classes
+    squareElement.className = "square " + ((rowindex + squareindex) % 2 === 0 ? "light" : "dark");
+    
+    // Re-apply highlights/checks
+    if (offlineLastMove) {
+      if (
+        (rowindex === offlineLastMove.from.row && squareindex === offlineLastMove.from.col) ||
+        (rowindex === offlineLastMove.to.row && squareindex === offlineLastMove.to.col)
+      ) {
+        squareElement.classList.add("highlight");
+      }
+    }
+    
+    if (offlineSelectedSquare && rowindex === offlineSelectedSquare.row && squareindex === offlineSelectedSquare.col) {
+      squareElement.classList.add("selected");
+    }
+    
+    if (square && square.type === "k") {
+      if (offlineChess.isCheckmate() && offlineChess.turn() === square.color) {
+        squareElement.classList.add("king-checkmate");
+      } else if (offlineChess.isCheck() && offlineChess.turn() === square.color) {
+        squareElement.classList.add("king-in-check");
+      }
+    }
+    
+    // Reuse piece elements
+    let pieceElement = squareElement.querySelector(".piece");
+    
+    if (!square) {
+      if (pieceElement) {
+        pieceElement.remove();
+      }
+    } else {
+      const pieceColor = square.color === "w" ? "white" : "black";
+      
+      if (pieceElement) {
+        const img = pieceElement.querySelector(".piece-img");
+        // If color or type is different, replace it
+        if (!pieceElement.classList.contains(pieceColor) || (img && img.getAttribute("data-type") !== square.type)) {
+          pieceElement.remove();
+          pieceElement = createOfflinePieceDOM(square, rowindex, squareindex);
+          squareElement.appendChild(pieceElement);
+        } else {
+          // Update draggability
+          const isMyTurn = offlineChess.turn() === square.color && !offlineGameOver;
+          pieceElement.draggable = isMyTurn;
+          pieceElement.classList.toggle("draggable", isMyTurn);
+        }
+      } else {
+        pieceElement = createOfflinePieceDOM(square, rowindex, squareindex);
         squareElement.appendChild(pieceElement);
       }
-
-      // Click-to-move
-      squareElement.addEventListener("click", () => {
-        if (offlineGameOver) return;
-        const currentTurn = offlineChess.turn();
-
-        if (offlineSelectedSquare) {
-          const targetRow = rowindex;
-          const targetCol = squareindex;
-
-          if (targetRow === offlineSelectedSquare.row && targetCol === offlineSelectedSquare.col) {
-            offlineClearSelection();
-            return;
-          }
-
-          const moves = offlineGetLegalMoves(offlineSelectedSquare.row, offlineSelectedSquare.col);
-          const targetAlg = `${String.fromCharCode(97 + targetCol)}${8 - targetRow}`;
-          const isLegal = moves.some((m) => m.to === targetAlg);
-
-          if (isLegal) {
-            offlineHandleMove(offlineSelectedSquare, { row: targetRow, col: targetCol });
-            offlineClearSelection();
-          } else if (square && square.color === currentTurn) {
-            offlineClearSelection();
-            offlineSelectedSquare = { row: rowindex, col: squareindex };
-            squareElement.classList.add("selected");
-            offlineShowLegalMoves(rowindex, squareindex);
-          } else {
-            offlineClearSelection();
-          }
-        } else {
-          if (square && square.color === currentTurn) {
-            offlineClearSelection();
-            offlineSelectedSquare = { row: rowindex, col: squareindex };
-            squareElement.classList.add("selected");
-            offlineShowLegalMoves(rowindex, squareindex);
-          }
-        }
-      });
-
-      // Drag events on squares
-      squareElement.addEventListener("dragover", (e) => {
-        e.preventDefault();
-        squareElement.classList.add("drop-target");
-      });
-      squareElement.addEventListener("dragleave", () => {
-        squareElement.classList.remove("drop-target");
-      });
-      squareElement.addEventListener("drop", (e) => {
-        e.preventDefault();
-        squareElement.classList.remove("drop-target");
-        offlineClearSelection();
-        if (offlineDraggedPiece) {
-          const targetSource = {
-            row: parseInt(squareElement.dataset.row),
-            col: parseInt(squareElement.dataset.col),
-          };
-          offlineHandleMove(offlineSourceSquare, targetSource);
-        }
-      });
-
-      fragment.appendChild(squareElement);
-    });
+    }
   });
-
-  offlineBoardEl.innerHTML = "";
-  offlineBoardEl.appendChild(fragment);
-  // No flip — both players share the same device, board stays white-perspective
-  offlineBoardEl.classList.remove("flipped");
-
+  
   offlineUpdateTurn();
   offlineUpdateCaptured();
   offlineUpdateGameStatus();
-
-  // Apply saved theme
-  const currentTheme = localStorage.getItem("chess-board-theme") || "classic";
-  offlineBoardEl.classList.remove("theme-classic", "theme-emerald", "theme-ice", "theme-tournament", "theme-marble", "theme-walnut");
-  if (currentTheme && currentTheme !== "classic") {
-    offlineBoardEl.classList.add(`theme-${currentTheme}`);
-  }
 }
 
 // --- Handle Move (offline) ---
@@ -2783,7 +3101,8 @@ window.addEventListener("beforeinstallprompt", (e) => {
   deferredPrompt = e;
   
   const isDismissed = localStorage.getItem("pwa-install-dismissed") === "true";
-  if (pwaPopup && isMobile() && !isDismissed) {
+  const activeScreenElement = document.querySelector(".screen.active-screen");
+  if (pwaPopup && isMobile() && !isDismissed && activeScreenElement === authScreen) {
     pwaPopup.style.display = "block";
   }
 });
@@ -2809,3 +3128,17 @@ if (btnPwaDismiss) {
     localStorage.setItem("pwa-install-dismissed", "true");
   });
 }
+
+// Fade out Splash Screen on launch
+window.addEventListener("DOMContentLoaded", () => {
+  const splash = document.getElementById("app-splash-screen");
+  if (splash) {
+    setTimeout(() => {
+      splash.style.opacity = "0";
+      splash.style.pointerEvents = "none";
+      setTimeout(() => {
+        splash.remove();
+      }, 400);
+    }, 1800);
+  }
+});

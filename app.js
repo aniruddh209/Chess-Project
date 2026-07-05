@@ -201,18 +201,176 @@ app.get("/api/profile/:username", async (req, res) => {
     const user = await User.findOne({ username: req.params.username });
     if (!user) return res.status(404).json({ error: "User not found" });
 
-    const recentGames = await Game.find({
+    // Fetch all games for user to calculate aggregates and streaks
+    const allGames = await Game.find({
       "players.username": user.username,
-    })
-      .sort({ createdAt: -1 })
-      .limit(10)
-      .lean();
+    }).sort({ createdAt: 1 }).lean();
+
+    // 1. Basic Stats & Metrics
+    let wins = 0;
+    let losses = 0;
+    let draws = 0;
+    let totalMoves = 0;
+    let totalDuration = 0;
+    
+    // Color Performance
+    let whiteGames = 0;
+    let whiteWins = 0;
+    let whiteLosses = 0;
+    let whiteDraws = 0;
+    
+    let blackGames = 0;
+    let blackWins = 0;
+    let blackDraws = 0;
+    let blackLosses = 0;
+
+    // Time Control breakdowns
+    const timeControlStats = {
+      bullet: { total: 0, wins: 0, losses: 0, draws: 0 },
+      blitz: { total: 0, wins: 0, losses: 0, draws: 0 },
+      rapid: { total: 0, wins: 0, losses: 0, draws: 0 },
+    };
+
+    // Date tracking for streaks (using YYYY-MM-DD in local/server date format)
+    const gameDates = new Set();
+
+    allGames.forEach((g) => {
+      const myPlayer = g.players.find((p) => p.username === user.username);
+      if (!myPlayer) return;
+      
+      const myColor = myPlayer.color;
+      const isWinner = g.winner === user.username;
+      const isDraw = g.result === "draw";
+      
+      totalMoves += g.totalMoves || 0;
+      totalDuration += g.duration || 0;
+
+      // Extract local date string YYYY-MM-DD
+      const dateStr = new Date(g.createdAt).toISOString().split("T")[0];
+      gameDates.add(dateStr);
+
+      if (isDraw) {
+        draws++;
+      } else if (isWinner) {
+        wins++;
+      } else {
+        losses++;
+      }
+
+      if (myColor === "white") {
+        whiteGames++;
+        if (isDraw) whiteDraws++;
+        else if (isWinner) whiteWins++;
+        else whiteLosses++;
+      } else {
+        blackGames++;
+        if (isDraw) blackDraws++;
+        else if (isWinner) blackWins++;
+        else blackLosses++;
+      }
+
+      // Time Control category
+      const tc = g.timeControl;
+      if (tc !== null && tc !== undefined) {
+        let category = "rapid";
+        if (tc < 180) category = "bullet";
+        else if (tc <= 600) category = "blitz";
+        
+        timeControlStats[category].total++;
+        if (isDraw) timeControlStats[category].draws++;
+        else if (isWinner) timeControlStats[category].wins++;
+        else timeControlStats[category].losses++;
+      }
+    });
+
+    // 2. Daily Streak System
+    const sortedDates = Array.from(gameDates).sort();
+    let currentStreak = 0;
+    let bestStreak = 0;
+    let activeToday = false;
+    let activeYesterday = false;
+
+    if (sortedDates.length > 0) {
+      const todayStr = new Date().toISOString().split("T")[0];
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().split("T")[0];
+
+      activeToday = gameDates.has(todayStr);
+      activeYesterday = gameDates.has(yesterdayStr);
+
+      let tempStreak = 0;
+      let prevDate = null;
+
+      sortedDates.forEach((dStr) => {
+        const currentDate = new Date(dStr);
+        if (prevDate === null) {
+          tempStreak = 1;
+        } else {
+          const diffTime = Math.abs(currentDate - prevDate);
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          if (diffDays === 1) {
+            tempStreak++;
+          } else if (diffDays > 1) {
+            tempStreak = 1;
+          }
+        }
+        bestStreak = Math.max(bestStreak, tempStreak);
+        prevDate = currentDate;
+      });
+
+      if (activeToday || activeYesterday) {
+        currentStreak = tempStreak;
+      } else {
+        currentStreak = 0;
+      }
+    }
+
+    // Weekly activity (Mon-Sun indicators for last 7 days)
+    const weeklyActivity = [];
+    const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const dStr = d.toISOString().split("T")[0];
+      weeklyActivity.push({
+        day: dayNames[d.getDay()],
+        active: gameDates.has(dStr),
+      });
+    }
+
+    // 3. Compute Metrics
+    const avgMoves = allGames.length > 0 ? Math.round(totalMoves / allGames.length) : 0;
+    const avgDuration = allGames.length > 0 ? Math.round(totalDuration / allGames.length) : 0;
+
+    // Get 10 recent games
+    const recentGames = allGames.slice(-10).reverse();
 
     res.json({
       username: user.username,
-      stats: user.stats,
-      winPercentage: user.winPercentage,
+      stats: {
+        gamesPlayed: allGames.length,
+        wins,
+        losses,
+        draws,
+      },
+      winPercentage: allGames.length > 0 ? Math.round((wins / allGames.length) * 100) : 0,
       memberSince: user.createdAt,
+      streak: {
+        current: currentStreak,
+        best: bestStreak,
+        activeToday,
+        weeklyActivity,
+      },
+      colorPerf: {
+        white: { total: whiteGames, wins: whiteWins, losses: whiteLosses, draws: whiteDraws },
+        black: { total: blackGames, wins: blackWins, losses: blackLosses, draws: blackDraws },
+      },
+      metrics: {
+        avgMoves,
+        avgDuration,
+      },
+      timeControlStats,
       recentGames: recentGames.map((g) => ({
         opponent: g.players.find((p) => p.username !== user.username)?.username || "AI",
         myColor: g.players.find((p) => p.username === user.username)?.color || "white",
@@ -285,6 +443,7 @@ async function recordGame(room) {
       duration,
       isAI: !!room.isAI,
       aiDifficulty: room.aiDifficulty || null,
+      timeControl: room.timeControl !== undefined ? room.timeControl : null,
     });
 
     // Update stats for real players
@@ -302,6 +461,31 @@ async function recordGame(room) {
     }
   } catch (err) {
     console.error("Error recording game:", err);
+  }
+}
+
+// Reset room state and start a new game/rematch
+function restartGame(room, roomCode) {
+  stopTimer(roomCode);
+
+  room.chess = new Chess();
+  room.gameOver = false;
+  room.winner = null;
+  room.gameOverReason = null;
+  room.moveHistory = [];
+  room.startTime = Date.now();
+  room.gameTimer = room.timeControl;
+
+  io.to(roomCode).emit("newGameStarted", {
+    fen: room.chess.fen(),
+    timeControl: room.timeControl
+  });
+
+  if (room.isAI && room.aiColor === "w") {
+    scheduleAIMove(roomCode);
+  } else if (room.players.white && room.players.black && room.timeControl > 0) {
+    io.to(roomCode).emit("timerUpdate", { time: room.gameTimer });
+    startTimer(roomCode);
   }
 }
 
@@ -842,6 +1026,50 @@ io.on("connection", (uniquesocket) => {
       }
     } catch {
       uniquesocket.emit("invalidMove", move);
+    }
+  });
+
+  // ---------- Request New Game / Rematch ----------
+  uniquesocket.on("requestNewGame", () => {
+    const roomCode = socketRooms.get(uniquesocket.id);
+    if (!roomCode) return;
+    const room = rooms.get(roomCode);
+    if (!room) return;
+
+    if (room.isAI) {
+      restartGame(room, roomCode);
+      return;
+    }
+
+    const requesterColor = uniquesocket.id === room.players.white ? "white" : "black";
+    const opponentId = requesterColor === "white" ? room.players.black : room.players.white;
+
+    if (opponentId) {
+      const requesterUsername = room.usernames[requesterColor] || "Opponent";
+      io.to(opponentId).emit("newGameRequested", { requester: requesterUsername });
+    }
+  });
+
+  uniquesocket.on("acceptNewGame", () => {
+    const roomCode = socketRooms.get(uniquesocket.id);
+    if (!roomCode) return;
+    const room = rooms.get(roomCode);
+    if (!room) return;
+
+    restartGame(room, roomCode);
+  });
+
+  uniquesocket.on("declineNewGame", () => {
+    const roomCode = socketRooms.get(uniquesocket.id);
+    if (!roomCode) return;
+    const room = rooms.get(roomCode);
+    if (!room) return;
+
+    const declinerColor = uniquesocket.id === room.players.white ? "white" : "black";
+    const opponentId = declinerColor === "white" ? room.players.black : room.players.white;
+
+    if (opponentId) {
+      io.to(opponentId).emit("newGameDeclined");
     }
   });
 

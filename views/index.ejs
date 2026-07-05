@@ -14,6 +14,23 @@
     <meta name="google-site-verification" content="EuwlH4r5QJxM2uNRCi5DbRTz3t7SvJym6j1qb9EAPF8" />
   </head>
   <body>
+    <!-- ============================================================
+         PREMIUM SPLASH SCREEN (App Launch)
+         ============================================================ -->
+    <div id="app-splash-screen" class="splash-screen">
+      <div class="splash-content">
+        <div class="splash-logo-container">
+          <img src="/icon-512.png" alt="Chess Play" class="splash-logo" />
+        </div>
+        <h1 class="splash-title">ChessPlay</h1>
+        <p class="splash-subtitle">Where strategy meets elegance</p>
+      </div>
+      <div class="splash-footer">
+        <p class="splash-footer-dev">Developed by</p>
+        <p class="splash-footer-name">Aniruddh Parmar</p>
+      </div>
+    </div>
+
     <!-- Ambient Background Glow -->
     <div class="ambient-glow ambient-glow-1"></div>
     <div class="ambient-glow ambient-glow-2"></div>
@@ -162,82 +179,145 @@
           </div>
         </div>
 
-        <!-- Board Theme Selector -->
+        <!-- Appearance Settings Section -->
         <div class="theme-section">
-          <h2 class="section-title">🎨 Choose Your Board</h2>
-          <div class="theme-grid" id="theme-grid">
-            <label class="theme-card">
-              <input type="radio" name="board-theme" value="classic" checked />
-              <div class="theme-preview">
-                <div class="mini-board">
-                  <div class="mini-sq" style="background:#f0d9b5;"></div>
-                  <div class="mini-sq" style="background:#b58863;"></div>
-                  <div class="mini-sq" style="background:#b58863;"></div>
-                  <div class="mini-sq" style="background:#f0d9b5;"></div>
+          <h2 class="section-title">🎨 Appearance Settings</h2>
+          
+          <!-- App Theme (Light/Dark/System) -->
+          <div style="margin-bottom: 24px;">
+            <p class="theme-label" style="font-size: 13px; color: var(--text-muted); margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 600;">App Theme</p>
+            <div class="app-theme-selector" style="display: flex; gap: 8px;">
+              <button class="btn btn-secondary btn-small app-theme-btn" data-theme="dark" style="flex: 1;">Dark</button>
+              <button class="btn btn-secondary btn-small app-theme-btn" data-theme="light" style="flex: 1;">Light</button>
+              <button class="btn btn-secondary btn-small app-theme-btn" data-theme="system" style="flex: 1;">System</button>
+            </div>
+          </div>
+
+          <!-- Board Theme Selector -->
+          <div>
+            <p class="theme-label" style="font-size: 13px; color: var(--text-muted); margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 600;">Chessboard Style</p>
+            <div class="theme-grid" id="theme-grid">
+              <label class="theme-card">
+                <input type="radio" name="board-theme" value="classic" checked />
+                <div class="theme-preview">
+                  <div class="mini-board">
+                    <div class="mini-sq" style="background:#f0d9b5;"></div>
+                    <div class="mini-sq" style="background:#b58863;"></div>
+                    <div class="mini-sq" style="background:#b58863;"></div>
+                    <div class="mini-sq" style="background:#f0d9b5;"></div>
+                  </div>
                 </div>
-              </div>
-              <span class="theme-name">Classic Wood</span>
-            </label>
-            <label class="theme-card">
-              <input type="radio" name="board-theme" value="emerald" />
-              <div class="theme-preview">
-                <div class="mini-board">
-                  <div class="mini-sq" style="background:#eeeed2;"></div>
-                  <div class="mini-sq" style="background:#769656;"></div>
-                  <div class="mini-sq" style="background:#769656;"></div>
-                  <div class="mini-sq" style="background:#eeeed2;"></div>
+                <span class="theme-name">Classic Wood</span>
+              </label>
+              <label class="theme-card">
+                <input type="radio" name="board-theme" value="tournament" />
+                <div class="theme-preview">
+                  <div class="mini-board">
+                    <div class="mini-sq" style="background:#eeeed2;"></div>
+                    <div class="mini-sq" style="background:#769656;"></div>
+                    <div class="mini-sq" style="background:#769656;"></div>
+                    <div class="mini-sq" style="background:#eeeed2;"></div>
+                  </div>
                 </div>
-              </div>
-              <span class="theme-name">Emerald</span>
-            </label>
-            <label class="theme-card">
-              <input type="radio" name="board-theme" value="ice" />
-              <div class="theme-preview">
-                <div class="mini-board">
-                  <div class="mini-sq" style="background:#dee3e6;"></div>
-                  <div class="mini-sq" style="background:#8ca2ad;"></div>
-                  <div class="mini-sq" style="background:#8ca2ad;"></div>
-                  <div class="mini-sq" style="background:#dee3e6;"></div>
+                <span class="theme-name">Tourney Green</span>
+              </label>
+              <label class="theme-card">
+                <input type="radio" name="board-theme" value="ocean" />
+                <div class="theme-preview">
+                  <div class="mini-board">
+                    <div class="mini-sq" style="background:#dee3e6;"></div>
+                    <div class="mini-sq" style="background:#5c8a97;"></div>
+                    <div class="mini-sq" style="background:#5c8a97;"></div>
+                    <div class="mini-sq" style="background:#dee3e6;"></div>
+                  </div>
                 </div>
-              </div>
-              <span class="theme-name">Blue Ice</span>
-            </label>
-            <label class="theme-card">
-              <input type="radio" name="board-theme" value="tournament" />
-              <div class="theme-preview">
-                <div class="mini-board">
-                  <div class="mini-sq" style="background:#e8e0c8;"></div>
-                  <div class="mini-sq" style="background:#3a7d44;"></div>
-                  <div class="mini-sq" style="background:#3a7d44;"></div>
-                  <div class="mini-sq" style="background:#e8e0c8;"></div>
+                <span class="theme-name">Ocean Blue</span>
+              </label>
+              <label class="theme-card">
+                <input type="radio" name="board-theme" value="midnight" />
+                <div class="theme-preview">
+                  <div class="mini-board">
+                    <div class="mini-sq" style="background:#94a3b8;"></div>
+                    <div class="mini-sq" style="background:#1e293b;"></div>
+                    <div class="mini-sq" style="background:#1e293b;"></div>
+                    <div class="mini-sq" style="background:#94a3b8;"></div>
+                  </div>
                 </div>
-              </div>
-              <span class="theme-name">Tournament</span>
-            </label>
-            <label class="theme-card">
-              <input type="radio" name="board-theme" value="marble" />
-              <div class="theme-preview">
-                <div class="mini-board">
-                  <div class="mini-sq" style="background:#f5f0e1;"></div>
-                  <div class="mini-sq" style="background:#6e6658;"></div>
-                  <div class="mini-sq" style="background:#6e6658;"></div>
-                  <div class="mini-sq" style="background:#f5f0e1;"></div>
+                <span class="theme-name">Midnight</span>
+              </label>
+              <label class="theme-card">
+                <input type="radio" name="board-theme" value="royal" />
+                <div class="theme-preview">
+                  <div class="mini-board">
+                    <div class="mini-sq" style="background:#d1c4e9;"></div>
+                    <div class="mini-sq" style="background:#512da8;"></div>
+                    <div class="mini-sq" style="background:#512da8;"></div>
+                    <div class="mini-sq" style="background:#d1c4e9;"></div>
+                  </div>
                 </div>
-              </div>
-              <span class="theme-name">Marble</span>
-            </label>
-            <label class="theme-card">
-              <input type="radio" name="board-theme" value="walnut" />
-              <div class="theme-preview">
-                <div class="mini-board">
-                  <div class="mini-sq" style="background:#e6cba1;"></div>
-                  <div class="mini-sq" style="background:#7b4e2a;"></div>
-                  <div class="mini-sq" style="background:#7b4e2a;"></div>
-                  <div class="mini-sq" style="background:#e6cba1;"></div>
+                <span class="theme-name">Royal Purple</span>
+              </label>
+              <label class="theme-card">
+                <input type="radio" name="board-theme" value="graphite" />
+                <div class="theme-preview">
+                  <div class="mini-board">
+                    <div class="mini-sq" style="background:#e2e8f0;"></div>
+                    <div class="mini-sq" style="background:#64748b;"></div>
+                    <div class="mini-sq" style="background:#64748b;"></div>
+                    <div class="mini-sq" style="background:#e2e8f0;"></div>
+                  </div>
                 </div>
-              </div>
-              <span class="theme-name">Walnut</span>
-            </label>
+                <span class="theme-name">Graphite</span>
+              </label>
+              <label class="theme-card">
+                <input type="radio" name="board-theme" value="emerald" />
+                <div class="theme-preview">
+                  <div class="mini-board">
+                    <div class="mini-sq" style="background:#e6f4ea;"></div>
+                    <div class="mini-sq" style="background:#137333;"></div>
+                    <div class="mini-sq" style="background:#137333;"></div>
+                    <div class="mini-sq" style="background:#e6f4ea;"></div>
+                  </div>
+                </div>
+                <span class="theme-name">Emerald</span>
+              </label>
+              <label class="theme-card">
+                <input type="radio" name="board-theme" value="rosewood" />
+                <div class="theme-preview">
+                  <div class="mini-board">
+                    <div class="mini-sq" style="background:#f5e6d3;"></div>
+                    <div class="mini-sq" style="background:#8c2d19;"></div>
+                    <div class="mini-sq" style="background:#8c2d19;"></div>
+                    <div class="mini-sq" style="background:#f5e6d3;"></div>
+                  </div>
+                </div>
+                <span class="theme-name">Rosewood</span>
+              </label>
+              <label class="theme-card">
+                <input type="radio" name="board-theme" value="sandstone" />
+                <div class="theme-preview">
+                  <div class="mini-board">
+                    <div class="mini-sq" style="background:#e3c099;"></div>
+                    <div class="mini-sq" style="background:#b3543b;"></div>
+                    <div class="mini-sq" style="background:#b3543b;"></div>
+                    <div class="mini-sq" style="background:#e3c099;"></div>
+                  </div>
+                </div>
+                <span class="theme-name">Sandstone</span>
+              </label>
+              <label class="theme-card">
+                <input type="radio" name="board-theme" value="contrast" />
+                <div class="theme-preview">
+                  <div class="mini-board">
+                    <div class="mini-sq" style="background:#ffffff;"></div>
+                    <div class="mini-sq" style="background:#1a1a1a;"></div>
+                    <div class="mini-sq" style="background:#1a1a1a;"></div>
+                    <div class="mini-sq" style="background:#ffffff;"></div>
+                  </div>
+                </div>
+                <span class="theme-name">Contrast</span>
+              </label>
+            </div>
           </div>
         </div>
 
@@ -366,14 +446,30 @@
 
       <!-- Profile Modal -->
       <div id="profile-modal" class="modal-overlay" style="display:none;">
-        <div class="modal glass-panel profile-modal-content">
-          <button id="btn-close-profile" class="btn-close-chat" style="position:absolute;top:16px;right:16px;">✕</button>
+        <div class="modal glass-panel profile-modal-content" style="max-height: 90vh; overflow-y: auto; max-width: 680px; width: 92%;">
+          <button id="btn-close-profile" class="btn-close-chat" style="position:absolute;top:16px;right:16px;z-index:10;">✕</button>
+          
           <div class="profile-header">
             <div class="profile-avatar">👤</div>
             <h2 class="profile-name" id="profile-name">—</h2>
             <p class="profile-since" id="profile-since">Member since —</p>
           </div>
-          <div class="profile-stats">
+
+          <!-- Streak Card -->
+          <div class="streak-card-container glass-panel" style="margin-top: 16px; padding: 16px; border-radius: 12px; background: rgba(212, 175, 55, 0.05); border: 1px solid rgba(212, 175, 55, 0.15); display: flex; flex-direction: column; gap: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-size: 16px; font-weight: 700; color: #ff9900; display: flex; align-items: center; gap: 6px;">
+                🔥 <span id="streak-current">0</span> Day Streak
+              </span>
+              <span style="font-size: 12px; color: var(--text-muted);">Best Streak: <strong id="streak-best" style="color: var(--text-primary);">0</strong></span>
+            </div>
+            
+            <div class="streak-days" id="streak-days-row" style="display: flex; justify-content: space-between; background: rgba(0,0,0,0.15); padding: 8px 12px; border-radius: 8px;">
+              <!-- Will be filled by JS: Mon, Tue, etc. -->
+            </div>
+          </div>
+
+          <div class="profile-stats" style="margin-top: 20px;">
             <div class="stat-card">
               <span class="stat-value" id="stat-games">0</span>
               <span class="stat-label">Played</span>
@@ -391,14 +487,68 @@
               <span class="stat-label">Draws</span>
             </div>
           </div>
-          <div class="profile-winrate">
+
+          <div class="profile-winrate" style="margin-top: 16px;">
             <span class="winrate-label">Win Rate</span>
             <div class="winrate-bar">
               <div class="winrate-fill" id="winrate-fill" style="width:0%;">0%</div>
             </div>
           </div>
-          <h3 class="panel-title" style="margin-top:20px;">Recent Games</h3>
-          <div class="recent-games" id="recent-games">
+
+          <!-- Color Performance -->
+          <h3 class="panel-title" style="margin-top:24px; font-size:14px; text-transform:uppercase; letter-spacing:1px; color:var(--accent);">⚪ vs ⚫ Color Performance</h3>
+          <div class="color-perf-container" style="display: flex; gap: 16px; margin-top: 8px;">
+            <div class="glass-panel" style="flex: 1; padding: 12px; border-radius: 8px; text-align: center;">
+              <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 4px;">As White</p>
+              <div style="font-size: 16px; font-weight: 700; color: var(--text-primary);" id="white-record">0W - 0L - 0D</div>
+              <p style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Games: <span id="white-total">0</span></p>
+            </div>
+            <div class="glass-panel" style="flex: 1; padding: 12px; border-radius: 8px; text-align: center;">
+              <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 4px;">As Black</p>
+              <div style="font-size: 16px; font-weight: 700; color: var(--text-primary);" id="black-record">0W - 0L - 0D</div>
+              <p style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Games: <span id="black-total">0</span></p>
+            </div>
+          </div>
+
+          <!-- Time Control & Play Metrics -->
+          <h3 class="panel-title" style="margin-top:24px; font-size:14px; text-transform:uppercase; letter-spacing:1px; color:var(--accent);">⏱ Time Control & Metrics</h3>
+          <div class="metrics-grid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-top: 8px;">
+            <div class="glass-panel" style="padding: 12px; border-radius: 8px; text-align: center;">
+              <div style="font-size: 11px; color: var(--text-muted);">Avg. Move Count</div>
+              <div style="font-size: 18px; font-weight: 700; color: var(--text-primary); margin-top: 4px;" id="metric-avg-moves">0</div>
+            </div>
+            <div class="glass-panel" style="padding: 12px; border-radius: 8px; text-align: center;">
+              <div style="font-size: 11px; color: var(--text-muted);">Avg. Duration</div>
+              <div style="font-size: 18px; font-weight: 700; color: var(--text-primary); margin-top: 4px;" id="metric-avg-duration">0m 0s</div>
+            </div>
+          </div>
+
+          <!-- Time control breakdown list -->
+          <div class="tc-breakdown glass-panel" style="margin-top: 12px; padding: 12px; border-radius: 8px; display: flex; flex-direction: column; gap: 8px;">
+            <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 4px;">
+              <span>Time Control</span>
+              <span>Record (W - L - D)</span>
+              <span>Total Games</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 12px;">
+              <span>Bullet (&lt;3 min)</span>
+              <span id="tc-bullet-record">0 - 0 - 0</span>
+              <span id="tc-bullet-total">0</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 12px;">
+              <span>Blitz (3 - 10 min)</span>
+              <span id="tc-blitz-record">0 - 0 - 0</span>
+              <span id="tc-blitz-total">0</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 12px;">
+              <span>Rapid (&gt;10 min)</span>
+              <span id="tc-rapid-record">0 - 0 - 0</span>
+              <span id="tc-rapid-total">0</span>
+            </div>
+          </div>
+
+          <h3 class="panel-title" style="margin-top:24px;">Recent Games</h3>
+          <div class="recent-games" id="recent-games" style="margin-top: 8px;">
             <p style="color:var(--text-muted);font-size:13px;text-align:center;">No games yet</p>
           </div>
         </div>
@@ -675,6 +825,30 @@
         </div>
         <div class="modal-actions">
           <button id="btn-modal-lobby" class="btn btn-primary">← New Game</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- LEAVE CONFIRMATION MODAL -->
+    <div id="leave-confirm-modal" class="modal-overlay" style="display:none; z-index: 10005;">
+      <div class="modal glass-panel confirm-modal-content">
+        <h2 class="modal-title" style="margin-top: 0; font-size: 20px; color: var(--accent);">Leave Game?</h2>
+        <p class="modal-message" style="margin: 16px 0; font-size: 14px; color: var(--text-secondary); line-height: 1.5;">Are you sure you want to leave this game? Your current match will be abandoned and recorded as a loss.</p>
+        <div class="modal-actions" style="display: flex; gap: 12px; margin-top: 24px; width: 100%;">
+          <button id="btn-leave-cancel" class="btn btn-secondary" style="flex: 1; padding: 12px 16px;">Cancel</button>
+          <button id="btn-leave-confirm" class="btn btn-danger" style="flex: 1; padding: 12px 16px;">Yes, Leave</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- NEW GAME REQUEST MODAL -->
+    <div id="newgame-request-modal" class="modal-overlay" style="display:none; z-index: 10006;">
+      <div class="modal glass-panel newgame-modal-content">
+        <h2 class="modal-title" style="margin-top: 0; font-size: 20px; color: var(--accent);">New Game Request</h2>
+        <p class="modal-message" id="newgame-request-message" style="margin: 16px 0; font-size: 14px; color: var(--text-secondary); line-height: 1.5;">Your opponent wants to start a new game.</p>
+        <div class="modal-actions" style="display: flex; gap: 12px; margin-top: 24px; width: 100%;">
+          <button id="btn-newgame-decline" class="btn btn-secondary" style="flex: 1; padding: 12px 16px;">Decline</button>
+          <button id="btn-newgame-accept" class="btn btn-primary" style="flex: 1; padding: 12px 16px;">Accept</button>
         </div>
       </div>
     </div>

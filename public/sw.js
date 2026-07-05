@@ -31,6 +31,10 @@ self.addEventListener("activate", (e) => {
 });
 
 self.addEventListener("fetch", (e) => {
+  // Only intercept GET requests and exclude socket/api calls
+  if (e.request.method !== "GET" || e.request.url.includes("/socket.io/") || e.request.url.includes("/api/")) {
+    return;
+  }
   e.respondWith(
     caches.match(e.request).then((cachedResponse) => {
       return cachedResponse || fetch(e.request).catch(() => {});

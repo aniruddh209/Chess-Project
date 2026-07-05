@@ -46,6 +46,51 @@
   --transition-normal: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* ---------- Light Theme Overrides ---------- */
+body.light-theme {
+  --bg-primary: #f4f6fa;
+  --bg-secondary: #ffffff;
+  --bg-card: rgba(240, 244, 248, 0.95);
+  --bg-card-solid: #f8fafc;
+  --text-primary: #1e293b;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+  --border-subtle: rgba(0, 0, 0, 0.06);
+  --border-accent: rgba(212, 175, 55, 0.4);
+  --glass-bg: rgba(255, 255, 255, 0.65);
+  --glass-border: rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 20px 40px rgba(15, 23, 42, 0.08);
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+body.light-theme .glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-color: var(--glass-border);
+}
+
+body.light-theme .ambient-glow {
+  opacity: 0.15;
+}
+
+body.light-theme input,
+body.light-theme select {
+  background: rgba(255, 255, 255, 0.8);
+  border-color: rgba(0, 0, 0, 0.12);
+  color: var(--text-primary);
+}
+
+body.light-theme input::placeholder {
+  color: var(--text-muted);
+}
+
+body.light-theme .chat-bubble.other {
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--text-primary);
+}
+
 html {
   font-size: 16px;
   -webkit-font-smoothing: antialiased;
@@ -1851,7 +1896,7 @@ body {
   align-items: center;
   gap: 12px;
   width: 100%;
-  max-width: 520px;
+  max-width: min(640px, 75vh, calc(100vw - 340px));
   padding: 12px 20px;
   background: var(--bg-card);
   border: 1px solid var(--glass-border);
@@ -2041,8 +2086,8 @@ body {
   display: grid;
   grid-template-columns: repeat(8, 1fr);
   grid-template-rows: repeat(8, 1fr);
-  width: 520px;
-  height: 520px;
+  width: min(640px, 75vh, calc(100vw - 340px));
+  height: min(640px, 75vh, calc(100vw - 340px));
   border-radius: 4px;
   overflow: hidden;
   box-shadow:
@@ -2127,119 +2172,244 @@ body {
 
 /* ---------- Board Themes ---------- */
 
-/* Emerald (chess.com style) */
-.chessboard.theme-emerald .square.light {
+/* Classic Wood (default) */
+.chessboard.theme-classic .square.light,
+.offline-chessboard.theme-classic .square.light {
+  background: #f0d9b5;
+  background-image: none;
+}
+.chessboard.theme-classic .square.dark,
+.offline-chessboard.theme-classic .square.dark {
+  background: #b58863;
+  background-image: none;
+}
+.chessboard.theme-classic .square.highlight.light,
+.offline-chessboard.theme-classic .square.highlight.light {
+  background: #f7ec6a;
+}
+.chessboard.theme-classic .square.highlight.dark,
+.offline-chessboard.theme-classic .square.highlight.dark {
+  background: #daa520;
+}
+.chessboard.theme-classic,
+.offline-chessboard.theme-classic {
+  box-shadow: 0 0 0 4px #8b6914, 0 0 0 6px #6a500e, 0 0 0 8px rgba(0, 0, 0, 0.4), 0 12px 40px rgba(0, 0, 0, 0.6);
+}
+
+/* Tournament Green */
+.chessboard.theme-tournament .square.light,
+.offline-chessboard.theme-tournament .square.light {
   background: #eeeed2;
   background-image: none;
 }
-
-.chessboard.theme-emerald .square.dark {
+.chessboard.theme-tournament .square.dark,
+.offline-chessboard.theme-tournament .square.dark {
   background: #769656;
   background-image: none;
 }
-
-.chessboard.theme-emerald .square.highlight.light {
+.chessboard.theme-tournament .square.highlight.light,
+.offline-chessboard.theme-tournament .square.highlight.light {
   background: #f6f669;
 }
-
-.chessboard.theme-emerald .square.highlight.dark {
+.chessboard.theme-tournament .square.highlight.dark,
+.offline-chessboard.theme-tournament .square.highlight.dark {
   background: #baca44;
 }
-
-.chessboard.theme-emerald {
+.chessboard.theme-tournament,
+.offline-chessboard.theme-tournament {
   box-shadow: 0 0 0 4px #4a7c34, 0 0 0 6px #3d6a2a, 0 0 0 8px rgba(0, 0, 0, 0.4), 0 12px 40px rgba(0, 0, 0, 0.6);
 }
 
-/* Blue Ice */
-.chessboard.theme-ice .square.light {
+/* Ocean Blue */
+.chessboard.theme-ocean .square.light,
+.offline-chessboard.theme-ocean .square.light {
   background: #dee3e6;
   background-image: none;
 }
-
-.chessboard.theme-ice .square.dark {
-  background: #8ca2ad;
+.chessboard.theme-ocean .square.dark,
+.offline-chessboard.theme-ocean .square.dark {
+  background: #5c8a97;
   background-image: none;
 }
-
-.chessboard.theme-ice .square.highlight.light {
+.chessboard.theme-ocean .square.highlight.light,
+.offline-chessboard.theme-ocean .square.highlight.light {
   background: #b4d7e8;
 }
-
-.chessboard.theme-ice .square.highlight.dark {
-  background: #7ab3c7;
+.chessboard.theme-ocean .square.highlight.dark,
+.offline-chessboard.theme-ocean .square.highlight.dark {
+  background: #4e7f8e;
+}
+.chessboard.theme-ocean,
+.offline-chessboard.theme-ocean {
+  box-shadow: 0 0 0 4px #395c6a, 0 0 0 6px #2a4550, 0 0 0 8px rgba(0, 0, 0, 0.4), 0 12px 40px rgba(0, 0, 0, 0.6);
 }
 
-.chessboard.theme-ice {
-  box-shadow: 0 0 0 4px #5a7a8a, 0 0 0 6px #4a6a7a, 0 0 0 8px rgba(0, 0, 0, 0.4), 0 12px 40px rgba(0, 0, 0, 0.6);
-}
-
-/* Tournament (deep green & cream) */
-.chessboard.theme-tournament .square.light {
-  background: #e8e0c8;
+/* Midnight */
+.chessboard.theme-midnight .square.light,
+.offline-chessboard.theme-midnight .square.light {
+  background: #94a3b8;
   background-image: none;
 }
-
-.chessboard.theme-tournament .square.dark {
-  background: #3a7d44;
+.chessboard.theme-midnight .square.dark,
+.offline-chessboard.theme-midnight .square.dark {
+  background: #1e293b;
   background-image: none;
 }
-
-.chessboard.theme-tournament .square.highlight.light {
-  background: #f5e6a3;
+.chessboard.theme-midnight .square.highlight.light,
+.offline-chessboard.theme-midnight .square.highlight.light {
+  background: #cbd5e1;
+}
+.chessboard.theme-midnight .square.highlight.dark,
+.offline-chessboard.theme-midnight .square.highlight.dark {
+  background: #334155;
+}
+.chessboard.theme-midnight,
+.offline-chessboard.theme-midnight {
+  box-shadow: 0 0 0 4px #0f172a, 0 0 0 6px #020617, 0 0 0 8px rgba(0, 0, 0, 0.4), 0 12px 40px rgba(0, 0, 0, 0.6);
 }
 
-.chessboard.theme-tournament .square.highlight.dark {
-  background: #6ab04c;
-}
-
-.chessboard.theme-tournament {
-  box-shadow: 0 0 0 4px #2d5f33, 0 0 0 6px #1e4a24, 0 0 0 8px rgba(0, 0, 0, 0.4), 0 12px 40px rgba(0, 0, 0, 0.6);
-}
-
-/* Marble */
-.chessboard.theme-marble .square.light {
-  background: #f5f0e1;
+/* Royal Purple */
+.chessboard.theme-royal .square.light,
+.offline-chessboard.theme-royal .square.light {
+  background: #d1c4e9;
   background-image: none;
 }
-
-.chessboard.theme-marble .square.dark {
-  background: #6e6658;
+.chessboard.theme-royal .square.dark,
+.offline-chessboard.theme-royal .square.dark {
+  background: #512da8;
   background-image: none;
 }
-
-.chessboard.theme-marble .square.highlight.light {
-  background: #e8dbb8;
+.chessboard.theme-royal .square.highlight.light,
+.offline-chessboard.theme-royal .square.highlight.light {
+  background: #ede7f6;
+}
+.chessboard.theme-royal .square.highlight.dark,
+.offline-chessboard.theme-royal .square.highlight.dark {
+  background: #673ab7;
+}
+.chessboard.theme-royal,
+.offline-chessboard.theme-royal {
+  box-shadow: 0 0 0 4px #311b92, 0 0 0 6px #1a0c5a, 0 0 0 8px rgba(0, 0, 0, 0.4), 0 12px 40px rgba(0, 0, 0, 0.6);
 }
 
-.chessboard.theme-marble .square.highlight.dark {
-  background: #8a7e6a;
-}
-
-.chessboard.theme-marble {
-  box-shadow: 0 0 0 4px #5a5448, 0 0 0 6px #4a4438, 0 0 0 8px rgba(0, 0, 0, 0.4), 0 12px 40px rgba(0, 0, 0, 0.6);
-}
-
-/* Walnut (rich brown) */
-.chessboard.theme-walnut .square.light {
-  background: #e6cba1;
+/* Graphite */
+.chessboard.theme-graphite .square.light,
+.offline-chessboard.theme-graphite .square.light {
+  background: #e2e8f0;
   background-image: none;
 }
-
-.chessboard.theme-walnut .square.dark {
-  background: #7b4e2a;
+.chessboard.theme-graphite .square.dark,
+.offline-chessboard.theme-graphite .square.dark {
+  background: #64748b;
   background-image: none;
 }
-
-.chessboard.theme-walnut .square.highlight.light {
-  background: #f0d88a;
+.chessboard.theme-graphite .square.highlight.light,
+.offline-chessboard.theme-graphite .square.highlight.light {
+  background: #f8fafc;
+}
+.chessboard.theme-graphite .square.highlight.dark,
+.offline-chessboard.theme-graphite .square.highlight.dark {
+  background: #475569;
+}
+.chessboard.theme-graphite,
+.offline-chessboard.theme-graphite {
+  box-shadow: 0 0 0 4px #334155, 0 0 0 6px #1e293b, 0 0 0 8px rgba(0, 0, 0, 0.4), 0 12px 40px rgba(0, 0, 0, 0.6);
 }
 
-.chessboard.theme-walnut .square.highlight.dark {
-  background: #b87333;
+/* Emerald */
+.chessboard.theme-emerald .square.light,
+.offline-chessboard.theme-emerald .square.light {
+  background: #e6f4ea;
+  background-image: none;
+}
+.chessboard.theme-emerald .square.dark,
+.offline-chessboard.theme-emerald .square.dark {
+  background: #137333;
+  background-image: none;
+}
+.chessboard.theme-emerald .square.highlight.light,
+.offline-chessboard.theme-emerald .square.highlight.light {
+  background: #f1f8e9;
+}
+.chessboard.theme-emerald .square.highlight.dark,
+.offline-chessboard.theme-emerald .square.highlight.dark {
+  background: #3367d6;
+}
+.chessboard.theme-emerald,
+.offline-chessboard.theme-emerald {
+  box-shadow: 0 0 0 4px #0d522c, 0 0 0 6px #063119, 0 0 0 8px rgba(0, 0, 0, 0.4), 0 12px 40px rgba(0, 0, 0, 0.6);
 }
 
-.chessboard.theme-walnut {
-  box-shadow: 0 0 0 4px #5a3818, 0 0 0 6px #3d2610, 0 0 0 8px rgba(0, 0, 0, 0.4), 0 12px 40px rgba(0, 0, 0, 0.6);
+/* Rosewood */
+.chessboard.theme-rosewood .square.light,
+.offline-chessboard.theme-rosewood .square.light {
+  background: #f5e6d3;
+  background-image: none;
+}
+.chessboard.theme-rosewood .square.dark,
+.offline-chessboard.theme-rosewood .square.dark {
+  background: #8c2d19;
+  background-image: none;
+}
+.chessboard.theme-rosewood .square.highlight.light,
+.offline-chessboard.theme-rosewood .square.highlight.light {
+  background: #fdf6e2;
+}
+.chessboard.theme-rosewood .square.highlight.dark,
+.offline-chessboard.theme-rosewood .square.highlight.dark {
+  background: #a73c24;
+}
+.chessboard.theme-rosewood,
+.offline-chessboard.theme-rosewood {
+  box-shadow: 0 0 0 4px #5c1c0f, 0 0 0 6px #3b1108, 0 0 0 8px rgba(0, 0, 0, 0.4), 0 12px 40px rgba(0, 0, 0, 0.6);
+}
+
+/* Sandstone */
+.chessboard.theme-sandstone .square.light,
+.offline-chessboard.theme-sandstone .square.light {
+  background: #e3c099;
+  background-image: none;
+}
+.chessboard.theme-sandstone .square.dark,
+.offline-chessboard.theme-sandstone .square.dark {
+  background: #b3543b;
+  background-image: none;
+}
+.chessboard.theme-sandstone .square.highlight.light,
+.offline-chessboard.theme-sandstone .square.highlight.light {
+  background: #eed8c1;
+}
+.chessboard.theme-sandstone .square.highlight.dark,
+.offline-chessboard.theme-sandstone .square.highlight.dark {
+  background: #c7654a;
+}
+.chessboard.theme-sandstone,
+.offline-chessboard.theme-sandstone {
+  box-shadow: 0 0 0 4px #7a3422, 0 0 0 6px #4d2015, 0 0 0 8px rgba(0, 0, 0, 0.4), 0 12px 40px rgba(0, 0, 0, 0.6);
+}
+
+/* High Contrast */
+.chessboard.theme-contrast .square.light,
+.offline-chessboard.theme-contrast .square.light {
+  background: #ffffff;
+  background-image: none;
+}
+.chessboard.theme-contrast .square.dark,
+.offline-chessboard.theme-contrast .square.dark {
+  background: #1a1a1a;
+  background-image: none;
+}
+.chessboard.theme-contrast .square.highlight.light,
+.offline-chessboard.theme-contrast .square.highlight.light {
+  background: #e6f7ff;
+}
+.chessboard.theme-contrast .square.highlight.dark,
+.offline-chessboard.theme-contrast .square.highlight.dark {
+  background: #0050b3;
+}
+.chessboard.theme-contrast,
+.offline-chessboard.theme-contrast {
+  box-shadow: 0 0 0 4px #000000, 0 0 0 6px #1f1f1f, 0 0 0 8px rgba(0, 0, 0, 0.4), 0 12px 40px rgba(0, 0, 0, 0.6);
 }
 
 /* ---------- Pieces (SVG image-based) ---------- */
@@ -4293,8 +4463,8 @@ body.modal-open {
 
 /* Bigger Board for Offline PvP */
 .offline-chessboard {
-  width: 580px;
-  height: 580px;
+  width: min(640px, 75vh, calc(100vw - 340px));
+  height: min(640px, 75vh, calc(100vw - 340px));
 }
 
 .offline-board-wrapper {
@@ -4303,7 +4473,7 @@ body.modal-open {
 
 /* Player bars — wider to match bigger board */
 .offline-player-bar {
-  max-width: 580px;
+  max-width: min(640px, 75vh, calc(100vw - 340px));
   width: 100%;
   position: relative;
 }
@@ -4867,5 +5037,137 @@ body.modal-open {
   
   .pwa-popup-desc {
     font-size: 11px;
+  }
+}
+
+/* ============================================================
+   PREMIUM SPLASH SCREEN
+   ============================================================ */
+
+.splash-screen {
+  position: fixed;
+  inset: 0;
+  background: #06080d; /* Match --bg-primary */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 80px 24px 60px;
+  z-index: 99999;
+  opacity: 1;
+  transition: opacity 0.40s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  pointer-events: all;
+  box-sizing: border-box;
+}
+
+.splash-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+}
+
+.splash-logo-container {
+  width: 120px;
+  height: 120px;
+  margin-bottom: 24px;
+  border-radius: 28px;
+  overflow: hidden;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5), 0 0 40px rgba(212, 175, 55, 0.15);
+  animation: splashLogoEntrance 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  opacity: 0;
+}
+
+.splash-logo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.splash-title {
+  font-family: "Playfair Display", serif;
+  font-size: 38px;
+  font-weight: 700;
+  color: #edf0f7; /* Match --text-primary */
+  letter-spacing: 1px;
+  margin: 0 0 8px;
+  opacity: 0;
+  animation: splashFadeIn 0.8s ease-out 0.4s forwards;
+}
+
+.splash-subtitle {
+  font-family: "Inter", sans-serif;
+  font-size: 14px;
+  color: #8a93ab; /* Match --text-secondary */
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin: 0;
+  opacity: 0;
+  animation: splashFadeIn 0.8s ease-out 0.6s forwards;
+}
+
+.splash-footer {
+  text-align: center;
+  opacity: 0;
+  animation: splashFadeIn 0.8s ease-out 0.8s forwards;
+}
+
+.splash-footer-dev {
+  font-family: "Inter", sans-serif;
+  font-size: 11px;
+  color: #454d63; /* Match --text-muted */
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  margin: 0 0 4px;
+}
+
+.splash-footer-name {
+  font-family: "Inter", sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  color: #d4af37; /* Match --accent */
+  letter-spacing: 0.5px;
+  margin: 0;
+}
+
+@keyframes splashLogoEntrance {
+  from {
+    transform: scale(0.7) translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes splashFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Safe areas for iPhone notch / bottom indicator */
+@supports (padding: env(safe-area-inset-top)) {
+  .splash-screen {
+    padding-top: calc(80px + env(safe-area-inset-top));
+    padding-bottom: calc(60px + env(safe-area-inset-bottom));
+  }
+}
+
+/* Respect reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  .splash-logo-container,
+  .splash-title,
+  .splash-subtitle,
+  .splash-footer {
+    animation: none !important;
+    opacity: 1 !important;
   }
 }

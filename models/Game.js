@@ -27,6 +27,7 @@ const gameSchema = new mongoose.Schema({
   ],
   totalMoves: { type: Number, default: 0 },
   duration: { type: Number, default: 0 }, // seconds
+  timeControl: { type: Number, default: null }, // seconds
   isAI: { type: Boolean, default: false },
   aiDifficulty: { type: String, enum: ["easy", "medium", "hard", null], default: null },
   createdAt: {
