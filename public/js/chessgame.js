@@ -538,6 +538,8 @@ function updateConnectionText(text) {
 // --- Render Board ---
 let selectedSquare = null; // For click-to-move
 let lastMove = null; // { from: {row,col}, to: {row,col} }
+let lastAnimatedMove = null;
+let isLocalDraggingMove = false;
 
 // Preload piece images to prevent flicker
 const pieceImageCache = {};
@@ -803,6 +805,48 @@ function handleSquareClick(rowindex, squareindex, squareElement) {
   }
 }
 
+const animatePieceMove = (boardContainer, from, to) => {
+  const fromSquare = boardContainer.querySelector(`.square[data-row="${from.row}"][data-col="${from.col}"]`);
+  const toSquare = boardContainer.querySelector(`.square[data-row="${to.row}"][data-col="${to.col}"]`);
+  if (!fromSquare || !toSquare) return;
+
+  const piece = toSquare.querySelector(".piece");
+  if (!piece) return;
+
+  const fromRect = fromSquare.getBoundingClientRect();
+  const toRect = toSquare.getBoundingClientRect();
+
+  const isFlipped = boardContainer.classList.contains("flipped");
+  const multiplier = isFlipped ? -1 : 1;
+
+  const dx = (fromRect.left - toRect.left) * multiplier;
+  const dy = (fromRect.top - toRect.top) * multiplier;
+
+  // Setup initial offset state
+  piece.style.transition = "none";
+  piece.style.transform = isFlipped 
+    ? `rotate(180deg) translate(${dx}px, ${dy}px)` 
+    : `translate(${dx}px, ${dy}px)`;
+  piece.style.zIndex = "100";
+
+  // Force reflow
+  piece.offsetHeight;
+
+  // Smoothly transition to target position
+  piece.style.transition = "transform 180ms cubic-bezier(0.2, 0, 0, 1)";
+  piece.style.transform = isFlipped ? "rotate(180deg) translate(0, 0)" : "translate(0, 0)";
+
+  const onTransitionEnd = (e) => {
+    if (e.propertyName === "transform") {
+      piece.style.transition = "";
+      piece.style.transform = "";
+      piece.style.zIndex = "";
+      piece.removeEventListener("transitionend", onTransitionEnd);
+    }
+  };
+  piece.addEventListener("transitionend", onTransitionEnd);
+};
+
 const renderBoard = (() => {
   let renderQueued = false;
   
@@ -812,6 +856,7 @@ const renderBoard = (() => {
     
     // Ensure 64 square elements exist in the board container
     let squares = boardElement.querySelectorAll(".square");
+    const wasInitialized = squares.length === 64;
     const isFlipped = PlayerRole === "b";
     
     if (squares.length !== 64) {
@@ -850,6 +895,7 @@ const renderBoard = (() => {
                 row: parseInt(squareElement.dataset.row),
                 col: parseInt(squareElement.dataset.col),
               };
+              isLocalDraggingMove = true;
               handleMove(sourceSquare, targetSource);
             }
           });
@@ -931,6 +977,31 @@ const renderBoard = (() => {
     updatePlayerBars();
     updateGameStatus();
     updateCapturedPieces();
+
+    // Slide animation integration
+    if (lastMove && lastMove !== lastAnimatedMove) {
+      if (wasInitialized && !isLocalDraggingMove) {
+        animatePieceMove(boardElement, lastMove.from, lastMove.to);
+        
+        // Handle castling rook animation
+        const board = chess.board();
+        const movedPiece = board[lastMove.to.row][lastMove.to.col];
+        if (movedPiece && movedPiece.type === "k" && Math.abs(lastMove.from.col - lastMove.to.col) === 2) {
+          // Castling detected!
+          const isWhite = movedPiece.color === "w";
+          const row = isWhite ? 7 : 0;
+          if (lastMove.to.col === 6) {
+            // Kingside castling
+            animatePieceMove(boardElement, { row, col: 7 }, { row, col: 5 });
+          } else if (lastMove.to.col === 2) {
+            // Queenside castling
+            animatePieceMove(boardElement, { row, col: 0 }, { row, col: 3 });
+          }
+        }
+      }
+      lastAnimatedMove = lastMove;
+    }
+    isLocalDraggingMove = false;
   };
   
   return () => {
@@ -1108,6 +1179,7 @@ function setupTouchDrag(boardEl, isOffline) {
       if (dropTarget) {
         const source = touchDragState.source;
         if (source.row !== dropTarget.row || source.col !== dropTarget.col) {
+          isLocalDraggingMove = true;
           if (touchDragState.isOffline) {
             offlineHandleMove(source, dropTarget);
           } else {
@@ -2410,6 +2482,7 @@ let offlineBlackTime = 600;
 let offlineTimerInterval = null;
 let offlineTimerRAF = null;
 let offlineLastMove = null;
+let offlineLastAnimatedMove = null;
 let offlineSelectedSquare = null;
 let offlineDraggedPiece = null;
 let offlineSourceSquare = null;
@@ -2674,6 +2747,7 @@ function offlineRenderBoard() {
   const board = offlineChess.board();
   
   let squares = offlineBoardEl.querySelectorAll(".square");
+  const wasInitialized = squares.length === 64;
   
   if (squares.length !== 64) {
     offlineBoardEl.innerHTML = "";
@@ -2709,6 +2783,7 @@ function offlineRenderBoard() {
               row: parseInt(squareElement.dataset.row),
               col: parseInt(squareElement.dataset.col),
             };
+            isLocalDraggingMove = true;
             offlineHandleMove(offlineSourceSquare, targetSource);
           }
         });
@@ -2786,6 +2861,31 @@ function offlineRenderBoard() {
   offlineUpdateTurn();
   offlineUpdateCaptured();
   offlineUpdateGameStatus();
+
+  // Slide animation integration
+  if (offlineLastMove && offlineLastMove !== offlineLastAnimatedMove) {
+    if (wasInitialized && !isLocalDraggingMove) {
+      animatePieceMove(offlineBoardEl, offlineLastMove.from, offlineLastMove.to);
+      
+      // Handle castling rook animation
+      const board = offlineChess.board();
+      const movedPiece = board[offlineLastMove.to.row][offlineLastMove.to.col];
+      if (movedPiece && movedPiece.type === "k" && Math.abs(offlineLastMove.from.col - offlineLastMove.to.col) === 2) {
+        // Castling detected!
+        const isWhite = movedPiece.color === "w";
+        const row = isWhite ? 7 : 0;
+        if (offlineLastMove.to.col === 6) {
+          // Kingside castling
+          animatePieceMove(offlineBoardEl, { row, col: 7 }, { row, col: 5 });
+        } else if (offlineLastMove.to.col === 2) {
+          // Queenside castling
+          animatePieceMove(offlineBoardEl, { row, col: 0 }, { row, col: 3 });
+        }
+      }
+    }
+    offlineLastAnimatedMove = offlineLastMove;
+  }
+  isLocalDraggingMove = false;
 }
 
 // --- Handle Move (offline) ---
