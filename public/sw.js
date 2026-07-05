@@ -9,6 +9,7 @@ const ASSETS = [
 ];
 
 self.addEventListener("install", (e) => {
+  self.skipWaiting();
   e.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(ASSETS).catch(() => {});
@@ -26,7 +27,7 @@ self.addEventListener("activate", (e) => {
           }
         })
       );
-    })
+    }).then(() => self.clients.claim())
   );
 });
 
@@ -36,7 +37,7 @@ self.addEventListener("fetch", (e) => {
     return;
   }
   e.respondWith(
-    caches.match(e.request).then((cachedResponse) => {
+    caches.match(e.request, { ignoreSearch: true }).then((cachedResponse) => {
       return cachedResponse || fetch(e.request).catch(() => {});
     })
   );

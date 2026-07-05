@@ -85,6 +85,7 @@ const btnBackLobby = document.getElementById("btn-back-lobby");
 
 // Game elements
 const boardElement = document.querySelector(".chessboard");
+const offlineBoardEl = document.getElementById("offline-chessboard");
 const connectionStatus = document.getElementById("connection-status");
 const statusDot = connectionStatus ? connectionStatus.querySelector(".status-dot") : null;
 const gameStatusBanner = document.getElementById("game-status");
@@ -2389,7 +2390,6 @@ async function tryAutoLogin() {
 // ============================================================
 
 const offlineChess = new Chess();
-const offlineBoardEl = document.getElementById("offline-chessboard");
 const offlinePlayerTopEl = document.getElementById("offline-player-top");
 const offlinePlayerBottomEl = document.getElementById("offline-player-bottom");
 const offlineTimerWhiteEl = document.getElementById("offline-timer-white");
@@ -3168,7 +3168,7 @@ if (btnPwaDismiss) {
 }
 
 // Fade out Splash Screen on launch
-window.addEventListener("DOMContentLoaded", () => {
+const dismissSplash = () => {
   const splash = document.getElementById("app-splash-screen");
   if (splash) {
     setTimeout(() => {
@@ -3179,4 +3179,10 @@ window.addEventListener("DOMContentLoaded", () => {
       }, 400);
     }, 1800);
   }
-});
+};
+
+if (document.readyState === "loading") {
+  window.addEventListener("DOMContentLoaded", dismissSplash);
+} else {
+  dismissSplash();
+}
