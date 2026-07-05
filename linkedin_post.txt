@@ -1,0 +1,64 @@
+🔗 Live App: https://chess-project-0o2o.onrender.com/
+📂 GitHub Repository: https://github.com/aniruddh209/Chess-Project
+
+--------------------------------------------------
+
+Checkmate! ♟️🚀 
+
+I am incredibly excited to share my latest full-stack project: **ChessPlay** — a fully interactive, production-ready, real-time multiplayer chess platform that you can play directly in your web browser! 
+
+Whether you want to challenge a friend to a high-stakes match or test your strategy against an optimized chess AI, ChessPlay delivers a responsive, low-latency, and immersive gaming experience.
+
+Here’s a full breakdown of the features I engineered into this platform:
+
+🔹 REAL-TIME MULTIPLAYER
+Create private multiplayer rooms instantly and invite friends using a unique room code. Play as White, Black, or select random colors with seamless move synchronization.
+
+🔹 INTELLIGENT AI OPPONENT (Worker-Thread Powered)
+Don't have a partner? Play against a custom chess AI across multiple difficulty levels (Easy, Medium, Hard). 
+* The AI engine is built using the Minimax Algorithm with Alpha-Beta Pruning.
+* It uses Piece-Square Tables (PST) for positional play and material evaluation.
+* The best part? Heavy CPU-bound calculations are offloaded to Node.js worker_threads, keeping the server's main thread unblocked and super responsive for other players!
+
+🔹 LIVE SPECTATING
+Rooms full? No problem. Spectators can join any ongoing multiplayer match and watch board updates unfold in real time without interrupting the players.
+
+🔹 REAL-TIME IN-GAME CHAT
+Talk strategy or chat during the game with fully integrated room chats, complete with live typing indicators and system notifications.
+
+🔹 PERSISTENT PLAYER STATISTICS
+Track your progress! Your profile displays your total games played, wins, losses, draws, and win percentages. 
+
+🔹 SECURE USER AUTHENTICATION
+User signup and login are secured using industry-standard bcrypt password hashing and persistent session tracking.
+
+🔹 ADVANCED GAMEPLAY & RESILIENCE
+* Rematch system to quickly replay on the same board.
+* Server-authoritative move validation (validated with chess.js) to prevent cheating.
+* Automatic win assignment: if an opponent disconnects mid-game, their stats are updated, and the active player gets the win.
+
+--------------------------------------------------
+
+🛠️ WHAT I USED TO BUILD THIS:
+
+💻 Backend & Engine:
+- Node.js & Express.js (High-performance server environment)
+- Socket.IO (WebSockets for real-time bi-directional communication)
+- MongoDB & Mongoose (Persistent storage for users, matches, and stats)
+- chess.js (Server-authoritative rules validation)
+- bcrypt (Secure cryptographic hashing)
+
+🎨 Frontend:
+- EJS (Dynamic templating engine)
+- Vanilla JavaScript (Responsive client-side logic)
+- Vanilla CSS (Custom modern interface with fluid layouts and micro-interactions)
+
+☁️ Deployment:
+- Render (Production hosting)
+- MongoDB Atlas (Cloud database)
+
+--------------------------------------------------
+
+Try it out, start a match, or challenge the AI on Hard mode! I'd love to hear your feedback on the gameplay, UI, and overall experience. 👇
+
+#WebDevelopment #NodeJS #SocketIO #SoftwareEngineering #ChessAI #FullStackDeveloper #MongoDB #WebSockets #JavaScript #Coding #OpenSource #Portfolio

@@ -91,7 +91,6 @@ const capturedByWhiteEl = document.getElementById("captured-by-white");
 const capturedByBlackEl = document.getElementById("captured-by-black");
 const playerTopEl = document.getElementById("player-top");
 const playerBottomEl = document.getElementById("player-bottom");
-const btnNewGame = document.getElementById("btn-new-game");
 const btnLeaveGame = document.getElementById("btn-leave-game");
 const btnResign = document.getElementById("btn-resign");
 const gameRoomCode = document.getElementById("game-room-code");
@@ -101,7 +100,6 @@ const gameoverModal = document.getElementById("gameover-modal");
 const modalIcon = document.getElementById("modal-icon");
 const modalTitle = document.getElementById("modal-title");
 const modalMessage = document.getElementById("modal-message");
-const btnModalRematch = document.getElementById("btn-modal-rematch");
 const btnModalLobby = document.getElementById("btn-modal-lobby");
 
 // Drag state
@@ -413,11 +411,11 @@ socket.on("disconnect", () => {
   updateConnectionText("Reconnecting…");
 });
 
-socket.on("reconnect_attempt", (attempt) => {
+socket.io.on("reconnect_attempt", (attempt) => {
   updateConnectionText(`Reconnecting (${attempt})…`);
 });
 
-socket.on("reconnect_failed", () => {
+socket.io.on("reconnect_failed", () => {
   updateConnectionText("Connection lost");
 });
 
@@ -831,8 +829,133 @@ const handleMove = (source, target) => {
   socket.emit("move", move);
 };
 
+// ============================================================
+//  MOBILE TOUCH DRAG SUPPORT
+//  HTML5 drag-and-drop doesn't work on mobile browsers.
+//  This adds touchstart/touchmove/touchend for both boards.
+// ============================================================
 
+let touchDragState = null; // { ghost, source, boardEl, isOffline }
 
+function createTouchGhost(pieceEl) {
+  const ghost = pieceEl.cloneNode(true);
+  ghost.classList.add("touch-drag-ghost");
+  ghost.style.position = "fixed";
+  ghost.style.pointerEvents = "none";
+  ghost.style.zIndex = "10000";
+  ghost.style.width = pieceEl.offsetWidth + "px";
+  ghost.style.height = pieceEl.offsetHeight + "px";
+  ghost.style.opacity = "0.85";
+  ghost.style.transform = "scale(1.15)";
+  ghost.style.filter = "drop-shadow(0 4px 12px rgba(0,0,0,0.4))";
+  document.body.appendChild(ghost);
+  return ghost;
+}
+
+function getSquareFromPoint(x, y, boardEl) {
+  // Hide the ghost temporarily so elementFromPoint hits the board
+  const ghosts = document.querySelectorAll(".touch-drag-ghost");
+  ghosts.forEach(g => g.style.display = "none");
+
+  const el = document.elementFromPoint(x, y);
+
+  ghosts.forEach(g => g.style.display = "");
+
+  if (!el) return null;
+  const sq = el.closest(".square");
+  if (!sq || !boardEl.contains(sq)) return null;
+  return { row: parseInt(sq.dataset.row), col: parseInt(sq.dataset.col) };
+}
+
+function setupTouchDrag(boardEl, isOffline) {
+  boardEl.addEventListener("touchstart", (e) => {
+    const touch = e.touches[0];
+    const target = document.elementFromPoint(touch.clientX, touch.clientY);
+    if (!target) return;
+
+    const pieceEl = target.closest(".piece");
+    const squareEl = target.closest(".square");
+    if (!pieceEl || !squareEl || !boardEl.contains(squareEl)) return;
+
+    // Check if this piece is draggable
+    if (!pieceEl.draggable) return;
+
+    e.preventDefault();
+
+    const row = parseInt(squareEl.dataset.row);
+    const col = parseInt(squareEl.dataset.col);
+
+    // Create ghost
+    const ghost = createTouchGhost(pieceEl);
+    ghost.style.left = (touch.clientX - pieceEl.offsetWidth / 2) + "px";
+    ghost.style.top = (touch.clientY - pieceEl.offsetHeight / 2) + "px";
+
+    // Fade the original piece
+    pieceEl.style.opacity = "0.3";
+
+    touchDragState = {
+      ghost,
+      source: { row, col },
+      originalPiece: pieceEl,
+      boardEl,
+      isOffline,
+    };
+  }, { passive: false });
+
+  boardEl.addEventListener("touchmove", (e) => {
+    if (!touchDragState || touchDragState.boardEl !== boardEl) return;
+    e.preventDefault();
+
+    const touch = e.touches[0];
+    const ghost = touchDragState.ghost;
+    ghost.style.left = (touch.clientX - ghost.offsetWidth / 2) + "px";
+    ghost.style.top = (touch.clientY - ghost.offsetHeight / 2) + "px";
+
+    // Highlight the square under the finger
+    boardEl.querySelectorAll(".square.drop-target").forEach(sq => sq.classList.remove("drop-target"));
+    const sq = getSquareFromPoint(touch.clientX, touch.clientY, boardEl);
+    if (sq) {
+      const targetEl = boardEl.querySelector(`.square[data-row="${sq.row}"][data-col="${sq.col}"]`);
+      if (targetEl) targetEl.classList.add("drop-target");
+    }
+  }, { passive: false });
+
+  boardEl.addEventListener("touchend", (e) => {
+    if (!touchDragState || touchDragState.boardEl !== boardEl) return;
+
+    const touch = e.changedTouches[0];
+    const dropTarget = getSquareFromPoint(touch.clientX, touch.clientY, boardEl);
+
+    // Cleanup
+    touchDragState.ghost.remove();
+    if (touchDragState.originalPiece) touchDragState.originalPiece.style.opacity = "";
+    boardEl.querySelectorAll(".square.drop-target").forEach(sq => sq.classList.remove("drop-target"));
+
+    if (dropTarget) {
+      const source = touchDragState.source;
+      if (source.row !== dropTarget.row || source.col !== dropTarget.col) {
+        if (touchDragState.isOffline) {
+          offlineHandleMove(source, dropTarget);
+        } else {
+          handleMove(source, dropTarget);
+        }
+      }
+    }
+
+    touchDragState = null;
+  }, { passive: false });
+
+  boardEl.addEventListener("touchcancel", () => {
+    if (!touchDragState || touchDragState.boardEl !== boardEl) return;
+    touchDragState.ghost.remove();
+    if (touchDragState.originalPiece) touchDragState.originalPiece.style.opacity = "";
+    boardEl.querySelectorAll(".square.drop-target").forEach(sq => sq.classList.remove("drop-target"));
+    touchDragState = null;
+  }, { passive: false });
+}
+
+// Setup touch drag for online board
+if (boardElement) setupTouchDrag(boardElement, false);
 // --- Update Player Info Bars ---
 function updatePlayerBars() {
   const turn = chess.turn();
@@ -1460,10 +1583,22 @@ socket.on("gameOver", (data) => {
       quote = getRandomQuote(LOSS_QUOTES);
     }
   } else if (data.reason === "timeout") {
-    icon = "⏰";
-    title = "Time's Up!";
-    message = "The game clock ran out — it's a draw!";
-    quote = getRandomQuote(DRAW_QUOTES);
+    if (isWin) {
+      icon = "🏆";
+      title = "You Win!";
+      message = `Your opponent's clock ran out — victory is yours!`;
+      quote = getRandomQuote(WIN_QUOTES);
+    } else if (isDraw) {
+      icon = "⏰";
+      title = "Time's Up!";
+      message = "The game clock ran out — it's a draw!";
+      quote = getRandomQuote(DRAW_QUOTES);
+    } else {
+      icon = "⏰";
+      title = "Time's Up!";
+      message = `Your clock ran out — ${data.winnerName} wins!`;
+      quote = getRandomQuote(LOSS_QUOTES);
+    }
   }
 
   modalIcon.textContent = icon;
@@ -1494,40 +1629,7 @@ socket.on("gameOver", (data) => {
   }
 });
 
-// New game event (rematch)
-socket.on("newGame", (data) => {
-  chess.reset();
-  if (data && data.fen) chess.load(data.fen);
-  lastMove = null;
-  selectedSquare = null;
-  gameStartTime = Date.now();
-  stopConfetti();
-  renderBoard();
-  updateMoveList();
-  gameoverModal.style.display = "none";
-  if (gameStatusBanner) gameStatusBanner.style.display = "none";
-
-  // Reset timer display for the new game
-  const clockEl = document.getElementById("game-clock");
-  const timerEl = document.getElementById("game-timer");
-  if (clockEl && timerEl) {
-    const tc = data && data.timeControl;
-    if (tc && tc > 0) {
-      clientTimerValue = tc;
-      clientTimerAnchor = performance.now();
-      timerEl.textContent = formatTimer(tc);
-      clockEl.style.display = "flex";
-      clockEl.classList.remove("timer-low");
-      startClientTimer();
-    } else {
-      // Infinite time — hide clock
-      stopClientTimer();
-      clientTimerValue = null;
-      clockEl.style.display = "none";
-      timerEl.textContent = "";
-    }
-  }
-});
+// Rematch removed — no newGame socket handler needed
 
 // Invalid move — silently ignore (piece snaps back)
 socket.on("invalidMove", () => { renderBoard(); });
@@ -1810,12 +1912,7 @@ socket.on("chatTyping", (data) => {
 //  GAME CONTROL BUTTONS
 // ============================================================
 
-// Rematch
-if (btnNewGame) {
-  btnNewGame.addEventListener("click", () => {
-    socket.emit("newGame");
-  });
-}
+// Rematch button removed
 
 // Resign
 if (btnResign) {
@@ -1838,16 +1935,14 @@ if (btnLeaveGame) {
   });
 }
 
-// Modal — Rematch
-if (btnModalRematch) {
-  btnModalRematch.addEventListener("click", () => {
-    socket.emit("newGame");
-  });
-}
-
-// Modal — Back to Lobby
+// Modal — Back to Lobby / New Game
 if (btnModalLobby) {
   btnModalLobby.addEventListener("click", () => {
+    // If we're in offline mode, handle offline back
+    if (offlineGameActive && offlineGameScreen && offlineGameScreen.classList.contains("active-screen")) {
+      offlineGoBack();
+      return;
+    }
     socket.emit("leaveRoom");
     chess.reset();
     gameoverModal.style.display = "none";
@@ -2049,6 +2144,12 @@ function startOfflineGame(tc) {
 
   // Start timer
   if (tc > 0) offlineStartTimer();
+
+  // Setup touch drag for offline board (only once)
+  if (offlineBoardEl && !offlineBoardEl._touchDragSetup) {
+    setupTouchDrag(offlineBoardEl, true);
+    offlineBoardEl._touchDragSetup = true;
+  }
 }
 
 // Lobby "Offline PvP" button
@@ -2560,38 +2661,8 @@ if (btnOfflineBackLobby) {
 
 // --- Modal buttons: make them work in offline mode too ---
 
-if (btnModalRematch) {
-  // The existing listener emits socket "newGame" — add offline handling
-  btnModalRematch.addEventListener("click", () => {
-    if (offlineGameActive && offlineGameScreen && offlineGameScreen.classList.contains("active-screen")) {
-      // Offline rematch
-      offlineStopTimer();
-      offlineChess.reset();
-      offlineGameOver = false;
-      offlineLastMove = null;
-      offlineSelectedSquare = null;
-      offlineStartTime = Date.now();
-      offlineWhiteTime = offlineTimeControl;
-      offlineBlackTime = offlineTimeControl;
-
-      if (gameoverModal) gameoverModal.style.display = "none";
-      stopConfetti();
-      if (offlineGameStatus) offlineGameStatus.style.display = "none";
-
-      offlineRenderBoard();
-      offlineUpdateTimerDisplay();
-      if (offlineTimeControl > 0) offlineStartTimer();
-    }
-  });
-}
-
-if (btnModalLobby) {
-  btnModalLobby.addEventListener("click", () => {
-    if (offlineGameActive && offlineGameScreen && offlineGameScreen.classList.contains("active-screen")) {
-      offlineGoBack();
-    }
-  });
-}
+// Modal buttons for offline mode: lobby button already handles offline in main handler above
+// Rematch in offline mode handled by the "New Game" button on the offline controls bar
 
 // ============================================================
 //  INITIAL STATE

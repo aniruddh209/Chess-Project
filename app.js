@@ -102,7 +102,7 @@ function setAuthCookie(res, username) {
   res.cookie("chess_token", token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
+    sameSite: "lax",
     maxAge: COOKIE_MAX_AGE,
   });
   return token;
@@ -488,8 +488,17 @@ function startTimer(roomCode) {
       current.gameOver = true;
       current.gameOverReason = "timeout";
       stopTimer(roomCode);
+      // Determine who loses: the player whose turn it is when time runs out
+      const loserColor = current.chess.turn() === "w" ? "white" : "black";
+      const winnerColor = loserColor === "white" ? "black" : "white";
+      current.winner = winnerColor;
       io.to(roomCode).emit("timerUpdate", { time: 0 });
-      io.to(roomCode).emit("gameOver", { reason: "timeout", winner: null, winnerName: null });
+      io.to(roomCode).emit("gameOver", {
+        reason: "timeout",
+        winner: winnerColor,
+        winnerName: current.usernames[winnerColor] || (current.isAI ? `AI (${current.aiDifficulty})` : ""),
+        loserName: current.usernames[loserColor] || "",
+      });
       recordGame(current);
       return;
     }
@@ -891,44 +900,7 @@ io.on("connection", (uniquesocket) => {
     uniquesocket.to(roomCode).emit("chatTyping", { username, typing: !!typing });
   });
 
-  // ---------- New Game (rematch) ----------
-  uniquesocket.on("newGame", () => {
-    const roomCode = socketRooms.get(uniquesocket.id);
-    if (!roomCode) return;
-    const room = rooms.get(roomCode);
-    if (!room) return;
-
-    // Stop any existing timer
-    stopTimer(roomCode);
-
-    room.chess = new Chess();
-    room.gameOver = false;
-    room.winner = null;
-    room.gameOverReason = null;
-    room.moveHistory = [];
-    room.startTime = Date.now();
-    room._aiThinking = false;
-
-    // Reset game timer to the original time control
-    room.gameTimer = room.timeControl;
-    room.timerAnchorTime = null;
-    room.timerAnchorValue = null;
-
-    io.to(roomCode).emit("newGame", { fen: room.chess.fen(), timeControl: room.timeControl });
-    io.to(roomCode).emit("chatSystem", "♟ New game started — Good luck!");
-    console.log(`New game started in room ${roomCode}`);
-
-    // Restart timer if time control is set
-    if (room.timeControl > 0) {
-      io.to(roomCode).emit("timerUpdate", { time: room.gameTimer });
-      startTimer(roomCode);
-    }
-
-    // If AI game, check if AI goes first
-    if (room.isAI && room.chess.turn() === room.aiColor) {
-      scheduleAIMove(roomCode);
-    }
-  });
+  // ---------- Rematch removed — players must create a new room ----------
 
   // ---------- Disconnect ----------
   uniquesocket.on("disconnect", () => {

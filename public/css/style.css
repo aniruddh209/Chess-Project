@@ -4748,3 +4748,28 @@ body.modal-open {
     color: #000 !important;
   }
 }
+
+/* ============================================================
+   MOBILE TOUCH DRAG GHOST
+   ============================================================ */
+
+.touch-drag-ghost {
+  position: fixed;
+  pointer-events: none;
+  z-index: 10000;
+  opacity: 0.85;
+  transform: scale(1.15);
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.4));
+  transition: none;
+}
+
+.touch-drag-ghost .piece-img {
+  width: 100%;
+  height: 100%;
+}
+
+/* Prevent page scroll while dragging pieces on mobile */
+.chessboard,
+.offline-chessboard {
+  touch-action: none;
+}

@@ -1,6 +1,6 @@
 # ♟️ ChessPlay — Real-Time Multiplayer Chess Platform
 
-[![Live Demo](https://img.shields.io/badge/Live-Demo-green?style=for-the-badge)](https://chessplay.onrender.com)
+[![Live Demo](https://img.shields.io/badge/Live-Demo-green?style=for-the-badge)](https://chess-project-0o2o.onrender.com/)
 
 ![Node.js](https://img.shields.io/badge/Node.js-339933?style=for-the-badge\&logo=nodedotjs\&logoColor=white)
 ![Express](https://img.shields.io/badge/Express.js-000000?style=for-the-badge\&logo=express\&logoColor=white)
