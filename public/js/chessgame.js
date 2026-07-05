@@ -24,8 +24,9 @@ let isAIGame = false;
 let lastSentMove = null;
 let pendingRoomJoin = null;
 
-// --- Piece Image URL (Lichess cburnett SVG set) ---
-const PIECE_CDN = "https://cdn.jsdelivr.net/gh/lichess-org/lila@master/public/piece/cburnett";
+// --- Piece Image URL (Lichess piece set loading) ---
+let currentPieceTheme = localStorage.getItem("chess-piece-theme") || "cburnett";
+let PIECE_CDN = `https://cdn.jsdelivr.net/gh/lichess-org/lila@master/public/piece/${currentPieceTheme}`;
 
 const getPieceImageUrl = (piece) => {
   const colorChar = piece.color === "w" ? "w" : "b";
@@ -763,6 +764,9 @@ function createPieceDOM(square, rowindex, squareindex) {
 }
 
 function handleSquareClick(rowindex, squareindex, squareElement) {
+  const interactionMode = localStorage.getItem("chess-move-interaction") || "both";
+  if (interactionMode === "drag") return; // clicks disabled
+
   const board = chess.board();
   const square = board[rowindex][squareindex];
 
@@ -806,6 +810,9 @@ function handleSquareClick(rowindex, squareindex, squareElement) {
 }
 
 const animatePieceMove = (boardContainer, from, to) => {
+  const animPref = localStorage.getItem("chess-piece-animation") || "smooth";
+  if (animPref === "off") return; // Animation disabled
+
   const fromSquare = boardContainer.querySelector(`.square[data-row="${from.row}"][data-col="${from.col}"]`);
   const toSquare = boardContainer.querySelector(`.square[data-row="${to.row}"][data-col="${to.col}"]`);
   if (!fromSquare || !toSquare) return;
@@ -822,6 +829,8 @@ const animatePieceMove = (boardContainer, from, to) => {
   const dx = (fromRect.left - toRect.left) * multiplier;
   const dy = (fromRect.top - toRect.top) * multiplier;
 
+  const speedMs = animPref === "fast" ? 100 : 180;
+
   // Setup initial offset state
   piece.style.transition = "none";
   piece.style.transform = isFlipped 
@@ -833,7 +842,7 @@ const animatePieceMove = (boardContainer, from, to) => {
   piece.offsetHeight;
 
   // Smoothly transition to target position
-  piece.style.transition = "transform 180ms cubic-bezier(0.2, 0, 0, 1)";
+  piece.style.transition = `transform ${speedMs}ms cubic-bezier(0.2, 0, 0, 1)`;
   piece.style.transform = isFlipped ? "rotate(180deg) translate(0, 0)" : "translate(0, 0)";
 
   const onTransitionEnd = (e) => {
