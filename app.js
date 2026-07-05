@@ -950,20 +950,56 @@ io.on("connection", (uniquesocket) => {
     socketUsers.set(uniquesocket.id, username);
     uniquesocket.join(roomCode);
 
-    // Check if this is a reconnection (grace period active for this user)
+    // Check if player is already registered in this room (reconnection or reload)
     let reconnected = false;
-    for (const [timerKey, info] of disconnectTimers) {
-      if (timerKey.startsWith(roomCode + "_") && info.username === username) {
-        // Cancel grace timer — player is back!
-        clearTimeout(info.timer);
-        disconnectTimers.delete(timerKey);
-        room.players[info.color] = uniquesocket.id;
-        uniquesocket.emit("playerRole", info.color === "white" ? "w" : "b");
-        io.to(roomCode).emit("opponentReconnected");
-        io.to(roomCode).emit("chatSystem", `✅ ${username} reconnected!`);
-        console.log(`${username} reconnected to room ${roomCode} as ${info.color}`);
-        reconnected = true;
-        break;
+    
+    // Check if the username matches an existing player in the room
+    if (room.usernames.white === username) {
+      room.players.white = uniquesocket.id;
+      uniquesocket.emit("playerRole", "w");
+      reconnected = true;
+      console.log(`${username} reconnected (white) to room ${roomCode}`);
+    } else if (room.usernames.black === username) {
+      room.players.black = uniquesocket.id;
+      uniquesocket.emit("playerRole", "b");
+      reconnected = true;
+      console.log(`${username} reconnected (black) to room ${roomCode}`);
+    }
+
+    // Cancel any active disconnect timers for this user in this room
+    if (reconnected) {
+      const whiteTimerKey = `${roomCode}_white`;
+      const blackTimerKey = `${roomCode}_black`;
+      
+      const whiteTimerInfo = disconnectTimers.get(whiteTimerKey);
+      if (whiteTimerInfo && whiteTimerInfo.username === username) {
+        clearTimeout(whiteTimerInfo.timer);
+        disconnectTimers.delete(whiteTimerKey);
+      }
+      
+      const blackTimerInfo = disconnectTimers.get(blackTimerKey);
+      if (blackTimerInfo && blackTimerInfo.username === username) {
+        clearTimeout(blackTimerInfo.timer);
+        disconnectTimers.delete(blackTimerKey);
+      }
+      
+      io.to(roomCode).emit("opponentReconnected");
+      io.to(roomCode).emit("chatSystem", `✅ ${username} reconnected!`);
+    } else {
+      // Check if info is in disconnectTimers grace list
+      for (const [timerKey, info] of disconnectTimers) {
+        if (timerKey.startsWith(roomCode + "_") && info.username === username) {
+          clearTimeout(info.timer);
+          disconnectTimers.delete(timerKey);
+          room.players[info.color] = uniquesocket.id;
+          room.usernames[info.color] = username;
+          uniquesocket.emit("playerRole", info.color === "white" ? "w" : "b");
+          io.to(roomCode).emit("opponentReconnected");
+          io.to(roomCode).emit("chatSystem", `✅ ${username} reconnected!`);
+          console.log(`${username} reconnected to room ${roomCode} as ${info.color}`);
+          reconnected = true;
+          break;
+        }
       }
     }
 

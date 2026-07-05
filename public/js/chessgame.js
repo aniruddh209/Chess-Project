@@ -22,6 +22,7 @@ let currentUsername = null;
 let currentRoomCode = null;
 let isAIGame = false;
 let lastSentMove = null;
+let pendingRoomJoin = null;
 
 // --- Piece Image URL (Lichess cburnett SVG set) ---
 const PIECE_CDN = "https://cdn.jsdelivr.net/gh/lichess-org/lila@master/public/piece/cburnett";
@@ -190,7 +191,12 @@ btnLogin.addEventListener("click", async () => {
 
     if (data.success) {
       currentUsername = data.username;
-      goToLobby();
+      if (pendingRoomJoin) {
+        socket.emit("joinRoom", { roomCode: pendingRoomJoin, username: currentUsername });
+        pendingRoomJoin = null;
+      } else {
+        goToLobby();
+      }
     } else {
       showError(loginError, data.error);
     }
@@ -231,7 +237,12 @@ btnSignup.addEventListener("click", async () => {
 
     if (data.success) {
       currentUsername = data.username;
-      goToLobby();
+      if (pendingRoomJoin) {
+        socket.emit("joinRoom", { roomCode: pendingRoomJoin, username: currentUsername });
+        pendingRoomJoin = null;
+      } else {
+        goToLobby();
+      }
     } else {
       showError(signupError, data.error);
     }
@@ -268,6 +279,11 @@ function goToLobby() {
   if (clockEl) { clockEl.style.display = "none"; clockEl.classList.remove("timer-low"); }
   const timerEl = document.getElementById("game-timer");
   if (timerEl) timerEl.textContent = "--:--";
+  
+  // Clear URL parameters when returning to lobby
+  if (window.location.search) {
+    window.history.replaceState(null, "", window.location.pathname);
+  }
 }
 
 // Logout — clear server cookie + client state
@@ -1297,6 +1313,12 @@ socket.on("roomCreated", (data) => {
 socket.on("roomJoined", (data) => {
   currentRoomCode = data.roomCode;
   if (gameRoomCode) gameRoomCode.textContent = `Room: ${data.roomCode}`;
+
+  // Sync URL query parameters
+  const targetSearch = `?room=${data.roomCode}`;
+  if (window.location.search !== targetSearch) {
+    window.history.replaceState(null, "", targetSearch);
+  }
 
   // Reset button states
   btnJoinRoom.disabled = false;
@@ -2346,7 +2368,12 @@ async function tryAutoLogin() {
     const data = await res.json();
     if (data.loggedIn && data.username) {
       currentUsername = data.username;
-      goToLobby();
+      if (pendingRoomJoin) {
+        socket.emit("joinRoom", { roomCode: pendingRoomJoin, username: currentUsername });
+        pendingRoomJoin = null;
+      } else {
+        goToLobby();
+      }
       return;
     }
   } catch (e) {
@@ -3071,6 +3098,17 @@ if (btnOfflineBackLobby) {
 // ============================================================
 //  INITIAL STATE
 // ============================================================
+
+// Parse initial URL parameters
+const urlParams = new URLSearchParams(window.location.search);
+const initialRoomCode = urlParams.get("room");
+const initialOffline = urlParams.get("offline");
+
+if (initialRoomCode) {
+  pendingRoomJoin = initialRoomCode;
+} else if (initialOffline === "true") {
+  startOfflineGame(600);
+}
 
 tryAutoLogin();
 
