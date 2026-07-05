@@ -20,6 +20,8 @@ const chess = new Chess();
 let PlayerRole = null;
 let currentUsername = null;
 let currentRoomCode = null;
+let isAIGame = false;
+let lastSentMove = null;
 
 // --- Piece Image URL (Lichess cburnett SVG set) ---
 const PIECE_CDN = "https://cdn.jsdelivr.net/gh/lichess-org/lila@master/public/piece/cburnett";
@@ -246,6 +248,7 @@ function goToLobby() {
   lobbyUsernameEl.textContent = currentUsername;
   PlayerRole = null;
   currentRoomCode = null;
+  isAIGame = false;
   clearErrors();
   // Reset game clock
   stopClientTimer();
@@ -272,6 +275,7 @@ btnLogout.addEventListener("click", async () => {
 
 // Create Room (with color selection)
 btnCreateRoom.addEventListener("click", () => {
+  isAIGame = false;
   const color = document.querySelector('input[name="create-color"]:checked')?.value || "white";
   const timeControl = document.querySelector('input[name="create-time"]:checked')?.value || "600";
   btnCreateRoom.disabled = true;
@@ -285,6 +289,7 @@ if (btnPlayAI) {
     const difficulty = document.querySelector('input[name="ai-diff"]:checked')?.value || "medium";
     const color = document.querySelector('input[name="ai-color"]:checked')?.value || "white";
     const timeControl = document.querySelector('input[name="ai-time"]:checked')?.value || "600";
+    isAIGame = true;
     btnPlayAI.disabled = true;
     btnPlayAI.textContent = "Starting...";
     socket.emit("playAI", { username: currentUsername, difficulty, color, timeControl });
@@ -806,10 +811,6 @@ const renderBoard = (() => {
   updatePlayerBars();
   updateGameStatus();
   updateCapturedPieces();
-
-  // Re-apply saved board theme
-  const currentTheme = localStorage.getItem("chess-board-theme") || "classic";
-  applyBoardTheme(currentTheme);
   };
   // Debounced render: coalesce multiple rapid calls into one paint
   return () => {
@@ -826,6 +827,32 @@ const handleMove = (source, target) => {
     to: `${String.fromCharCode(97 + target.col)}${8 - target.row}`,
     promotion: "q",
   };
+
+  // Safe immediate local updates (speculative/optimistic rendering)
+  try {
+    const moveResult = chess.move(move);
+    if (moveResult) {
+      lastMove = { from: source, to: target };
+      lastSentMove = { from: move.from, to: move.to };
+      renderBoard();
+      updateMoveList();
+      
+      // Play appropriate sound immediately
+      if (chess.isCheckmate() || chess.isStalemate() || chess.isDraw()) {
+        playGameOverSound();
+      } else if (chess.isCheck()) {
+        playCheckSound();
+      } else if (moveResult.captured) {
+        playCaptureSound();
+      } else {
+        playMoveSound();
+      }
+    }
+  } catch (e) {
+    console.error("Local move validation failed:", e);
+    return;
+  }
+
   socket.emit("move", move);
 };
 
@@ -869,6 +896,9 @@ function getSquareFromPoint(x, y, boardEl) {
 
 function setupTouchDrag(boardEl, isOffline) {
   boardEl.addEventListener("touchstart", (e) => {
+    // Only handle 1-finger touches
+    if (e.touches.length !== 1) return;
+
     const touch = e.touches[0];
     const target = document.elementFromPoint(touch.clientX, touch.clientY);
     if (!target) return;
@@ -880,36 +910,52 @@ function setupTouchDrag(boardEl, isOffline) {
     // Check if this piece is draggable
     if (!pieceEl.draggable) return;
 
-    e.preventDefault();
-
     const row = parseInt(squareEl.dataset.row);
     const col = parseInt(squareEl.dataset.col);
 
-    // Create ghost
-    const ghost = createTouchGhost(pieceEl);
-    ghost.style.left = (touch.clientX - pieceEl.offsetWidth / 2) + "px";
-    ghost.style.top = (touch.clientY - pieceEl.offsetHeight / 2) + "px";
-
-    // Fade the original piece
-    pieceEl.style.opacity = "0.3";
-
     touchDragState = {
-      ghost,
       source: { row, col },
       originalPiece: pieceEl,
       boardEl,
       isOffline,
+      startX: touch.clientX,
+      startY: touch.clientY,
+      hasMoved: false,
+      ghost: null
     };
-  }, { passive: false });
+  }, { passive: true });
 
   boardEl.addEventListener("touchmove", (e) => {
     if (!touchDragState || touchDragState.boardEl !== boardEl) return;
-    e.preventDefault();
 
     const touch = e.touches[0];
+    const dx = touch.clientX - touchDragState.startX;
+    const dy = touch.clientY - touchDragState.startY;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+
+    // If they haven't moved enough yet, check if we should start the drag
+    if (!touchDragState.hasMoved) {
+      if (distance > 8) {
+        touchDragState.hasMoved = true;
+        // Create ghost and fade original piece now!
+        const ghost = createTouchGhost(touchDragState.originalPiece);
+        touchDragState.ghost = ghost;
+        touchDragState.originalPiece.style.opacity = "0.3";
+      } else {
+        return; // Don't drag yet
+      }
+    }
+
+    // If we are dragging, prevent default scrolling
+    if (e.cancelable) {
+      e.preventDefault();
+    }
+
     const ghost = touchDragState.ghost;
-    ghost.style.left = (touch.clientX - ghost.offsetWidth / 2) + "px";
-    ghost.style.top = (touch.clientY - ghost.offsetHeight / 2) + "px";
+    if (ghost) {
+      ghost.style.left = (touch.clientX - ghost.offsetWidth / 2) + "px";
+      ghost.style.top = (touch.clientY - ghost.offsetHeight / 2) + "px";
+    }
 
     // Highlight the square under the finger
     boardEl.querySelectorAll(".square.drop-target").forEach(sq => sq.classList.remove("drop-target"));
@@ -923,23 +969,36 @@ function setupTouchDrag(boardEl, isOffline) {
   boardEl.addEventListener("touchend", (e) => {
     if (!touchDragState || touchDragState.boardEl !== boardEl) return;
 
-    const touch = e.changedTouches[0];
-    const dropTarget = getSquareFromPoint(touch.clientX, touch.clientY, boardEl);
+    // If they actually dragged the piece
+    if (touchDragState.hasMoved) {
+      e.preventDefault(); // Prevent ghost click
 
-    // Cleanup
-    touchDragState.ghost.remove();
-    if (touchDragState.originalPiece) touchDragState.originalPiece.style.opacity = "";
-    boardEl.querySelectorAll(".square.drop-target").forEach(sq => sq.classList.remove("drop-target"));
+      const touch = e.changedTouches[0];
+      const dropTarget = getSquareFromPoint(touch.clientX, touch.clientY, boardEl);
 
-    if (dropTarget) {
-      const source = touchDragState.source;
-      if (source.row !== dropTarget.row || source.col !== dropTarget.col) {
-        if (touchDragState.isOffline) {
-          offlineHandleMove(source, dropTarget);
-        } else {
-          handleMove(source, dropTarget);
+      // Cleanup
+      if (touchDragState.ghost) {
+        touchDragState.ghost.remove();
+      }
+      if (touchDragState.originalPiece) {
+        touchDragState.originalPiece.style.opacity = "";
+      }
+      boardEl.querySelectorAll(".square.drop-target").forEach(sq => sq.classList.remove("drop-target"));
+
+      if (dropTarget) {
+        const source = touchDragState.source;
+        if (source.row !== dropTarget.row || source.col !== dropTarget.col) {
+          if (touchDragState.isOffline) {
+            offlineHandleMove(source, dropTarget);
+          } else {
+            handleMove(source, dropTarget);
+          }
         }
       }
+    } else {
+      // It was a tap/click!
+      // The browser's native click event will naturally fire because we didn't call e.preventDefault()
+      // in touchstart or touchend. So click-to-move will work perfectly and immediately!
     }
 
     touchDragState = null;
@@ -947,8 +1006,12 @@ function setupTouchDrag(boardEl, isOffline) {
 
   boardEl.addEventListener("touchcancel", () => {
     if (!touchDragState || touchDragState.boardEl !== boardEl) return;
-    touchDragState.ghost.remove();
-    if (touchDragState.originalPiece) touchDragState.originalPiece.style.opacity = "";
+    if (touchDragState.ghost) {
+      touchDragState.ghost.remove();
+    }
+    if (touchDragState.originalPiece) {
+      touchDragState.originalPiece.style.opacity = "";
+    }
     boardEl.querySelectorAll(".square.drop-target").forEach(sq => sq.classList.remove("drop-target"));
     touchDragState = null;
   }, { passive: false });
@@ -1157,6 +1220,17 @@ socket.on("roomJoined", (data) => {
     }
   }
 
+  // Hide chat for AI games (no one to chat with)
+  const chatPanel = document.getElementById("chat-panel");
+  const chatToggle = document.getElementById("btn-chat-toggle");
+  if (isAIGame) {
+    if (chatPanel) chatPanel.style.display = "none";
+    if (chatToggle) chatToggle.style.display = "none";
+  } else {
+    if (chatPanel) chatPanel.style.display = "";
+    if (chatToggle) chatToggle.style.display = "";
+  }
+
   // Go to game screen
   showScreen(gameScreen);
 });
@@ -1269,6 +1343,12 @@ socket.on("move", (move) => {
   // Determine from/to positions for highlighting
   const from = algebraicToRowCol(move.from);
   const to = algebraicToRowCol(move.to);
+
+  // If this move was already applied locally (speculatively), ignore it
+  if (lastSentMove && lastSentMove.from === move.from && lastSentMove.to === move.to) {
+    lastSentMove = null; // Reset for next move
+    return;
+  }
 
   // Check if it's a capture before applying
   const boardBefore = chess.board();
@@ -1631,8 +1711,14 @@ socket.on("gameOver", (data) => {
 
 // Rematch removed — no newGame socket handler needed
 
-// Invalid move — silently ignore (piece snaps back)
-socket.on("invalidMove", () => { renderBoard(); });
+// Invalid move — speculative rollback (piece snaps back)
+socket.on("invalidMove", () => {
+  chess.undo();
+  lastMove = null;
+  lastSentMove = null;
+  renderBoard();
+  updateMoveList();
+});
 
 // ============================================================
 //  CHAT SYSTEM
@@ -2669,3 +2755,57 @@ if (btnOfflineBackLobby) {
 // ============================================================
 
 tryAutoLogin();
+
+// ============================================================
+//  PWA SERVICE WORKER & INSTALL POPUP
+// ============================================================
+
+// Register service worker
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch((err) => {
+      console.log("ServiceWorker registration failed: ", err);
+    });
+  });
+}
+
+let deferredPrompt = null;
+const pwaPopup = document.getElementById("pwa-install-popup");
+const btnPwaInstall = document.getElementById("btn-pwa-install");
+const btnPwaDismiss = document.getElementById("btn-pwa-dismiss");
+
+// Detect if it is mobile screen
+const isMobile = () => window.matchMedia("(max-width: 768px)").matches || /Mobi|Android|iPhone/i.test(navigator.userAgent);
+
+// Show the install promo on mobile if not dismissed before
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  
+  const isDismissed = localStorage.getItem("pwa-install-dismissed") === "true";
+  if (pwaPopup && isMobile() && !isDismissed) {
+    pwaPopup.style.display = "block";
+  }
+});
+
+if (btnPwaInstall) {
+  btnPwaInstall.addEventListener("click", async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    console.log(`User response to the install prompt: ${outcome}`);
+    deferredPrompt = null;
+    if (pwaPopup) {
+      pwaPopup.style.display = "none";
+    }
+  });
+}
+
+if (btnPwaDismiss) {
+  btnPwaDismiss.addEventListener("click", () => {
+    if (pwaPopup) {
+      pwaPopup.style.display = "none";
+    }
+    localStorage.setItem("pwa-install-dismissed", "true");
+  });
+}
