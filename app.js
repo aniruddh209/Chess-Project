@@ -656,7 +656,7 @@ function getHumanLikeDelay(difficulty, chess) {
 //  TIMER SYSTEM — accurate game clock with drift compensation
 // ============================================================
 
-function startTimer(roomCode) {
+function startRoomTimer(roomCode) {
   const room = rooms.get(roomCode);
   if (!room || room.gameOver || room.timeControl === 0) return;
   stopTimer(roomCode);
@@ -688,6 +688,11 @@ function startTimer(roomCode) {
     }
     io.to(roomCode).emit("timerUpdate", { time: current.gameTimer });
   }, 250);
+}
+
+// Backward-compatible alias for existing timer start calls.
+function startTimer(roomCode) {
+  return startRoomTimer(roomCode);
 }
 
 function stopTimer(roomCode) {
@@ -914,7 +919,7 @@ io.on("connection", (uniquesocket) => {
     // Send initial timer and start game clock
     if (tc > 0) {
       io.to(roomCode).emit("timerUpdate", { time: room.gameTimer });
-      startTimer(roomCode);
+      startRoomTimer(roomCode);
     }
 
     io.to(roomCode).emit("chatSystem", `🤖 Playing against AI (${difficulty})`);
@@ -1030,7 +1035,7 @@ io.on("connection", (uniquesocket) => {
     // Start game clock when both players are in (PvP)
     if (room.players.white && room.players.black && room.timeControl > 0) {
       io.to(roomCode).emit("timerUpdate", { time: room.gameTimer });
-      startTimer(roomCode);
+      startRoomTimer(roomCode);
     }
   });
 
